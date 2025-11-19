@@ -19,7 +19,7 @@ fi
 # -------------------------------------------------------
 # 1) Attende che i file core di WordPress siano presenti
 # -------------------------------------------------------
-MAX_WAIT=60   # secondi massimi di attesa
+MAX_WAIT=60
 SLEEP=1
 n=0
 echo "Waiting up to $MAX_WAIT seconds for WordPress core files..."
