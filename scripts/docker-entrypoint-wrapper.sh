@@ -1,15 +1,60 @@
 #!/bin/bash
 set -euo pipefail
 
-# -------------------------------------------------------
-# 1) Esegui l'import dei contenuti (.wpress) se presente
-#    PRIMA di inizializzare WordPress
-# -------------------------------------------------------
-echo "Running import-content.sh (if .wpress exists)..."
-/usr/local/bin/import-content.sh || echo "Import script completed with status: $?"
+WP_PATH="/var/www/html"
+CONTENT_FILE="/tmp/content.wpress"
+MARKER="$WP_PATH/.wpress_imported"
 
-# -------------------------------------------------------
-# 2) Avvia il normale entrypoint di WordPress
-# -------------------------------------------------------
-echo "Starting official WordPress entrypoint..."
+echo "=== Starting fresh WordPress installation with .wpress import ==="
+
+# Pulizia completa dei file WordPress esistenti
+echo "Cleaning WordPress directory..."
+find "$WP_PATH" -mindepth 1 -delete
+
+# Inizializza WordPress core
+echo "Initializing WordPress core..."
+docker-entrypoint.sh true
+echo "WordPress core initialized"
+
+# Attendere la disponibilità del database
+echo "Waiting for database connectivity..."
+for i in {1..60}; do
+    if wp db check --allow-root >/dev/null 2>&1; then
+        echo "Database is reachable"
+        break
+    fi
+    echo "Database not ready... attempt $i/60"
+    if [ $i -eq 60 ]; then
+        echo "ERROR: Database not reachable after 2 minutes"
+        exit 1
+    fi
+    sleep 2
+done
+
+# Installazione WordPress da zero
+echo "Installing WordPress core..."
+wp core install \
+    --url="https://localhost" \
+    --title="Dev WP" \
+    --admin_user="admin" \
+    --admin_password="admin" \
+    --admin_email="admin@example.com" \
+    --skip-email \
+    --allow-root
+echo "WordPress installed"
+
+# Import del contenuto .wpress
+if [ -f "$CONTENT_FILE" ]; then
+    echo "Found .wpress file: $CONTENT_FILE"
+    wp plugin install all-in-one-wp-migration --activate --allow-root
+    wp ai1wm import "$CONTENT_FILE" --yes --allow-root
+    echo "Import completed"
+    touch "$MARKER"
+    rm -f "$CONTENT_FILE"
+else
+    echo "No .wpress file found at $CONTENT_FILE, skipping import"
+fi
+
+# Avvia Apache
+echo "Starting Apache..."
 exec docker-entrypoint.sh "$@"
