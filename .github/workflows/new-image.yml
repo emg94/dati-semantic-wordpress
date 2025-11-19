@@ -19,9 +19,9 @@ jobs:
 
           echo "Updating Kubernetes with image: $IMAGE"
 
-          # sulla repo teamdigitale/dati-semantic-kubernetes
+          # Trigger della pipeline nella repo teamdigitale/dati-semantic-kubernetes
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: token ${{ secrets.PERSONAL_ACCESS_TOKEN }}" \
             https://api.github.com/repos/teamdigitale/dati-semantic-kubernetes/actions/workflows/update-config.yaml/dispatches \
-            -d "{\"ref\":\"main\", \"inputs\": {\"serviceName\": \"dati-semantic-wordpress\", \"imageWithNewTag\": \"$IMAGE\"}}"
+            -d "{\"ref\":\"dev\", \"inputs\": {\"serviceName\": \"dati-semantic-wordpress\", \"imageWithNewTag\": \"$IMAGE\"}}"
