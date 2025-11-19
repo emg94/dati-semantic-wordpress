@@ -13,7 +13,7 @@ RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli
     chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp
 
 # -------------------------------------------
-# Copia il file .wpress generato dal branch content
+# Copia il file .wpress
 # -------------------------------------------
 COPY ./imported-content/*.wpress /tmp/content.wpress
 
@@ -24,5 +24,8 @@ COPY scripts/import-content.sh /usr/local/bin/import-content.sh
 COPY scripts/docker-entrypoint-wrapper.sh /usr/local/bin/docker-entrypoint-wrapper.sh
 RUN chmod +x /usr/local/bin/import-content.sh /usr/local/bin/docker-entrypoint-wrapper.sh
 
+# -------------------------------------------
+# Entry point wrapper che importa .wpress prima di avviare WordPress
+# -------------------------------------------
 ENTRYPOINT ["docker-entrypoint-wrapper.sh"]
 CMD ["apache2-foreground"]
