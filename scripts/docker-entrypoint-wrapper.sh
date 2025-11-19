@@ -2,20 +2,14 @@
 set -euo pipefail
 
 # -------------------------------------------------------
-# 1) Esegui l'entrypoint ufficiale per inizializzare WP core
-#    senza avviare Apache (docker-entrypoint.sh true)
-# -------------------------------------------------------
-echo "Initializing WordPress core files..."
-docker-entrypoint.sh true
-
-# -------------------------------------------------------
-# 2) Esegui l'import dei contenuti (.wpress) se presente
+# 1) Esegui l'import dei contenuti (.wpress) se presente
+#    PRIMA di inizializzare WordPress
 # -------------------------------------------------------
 echo "Running import-content.sh (if .wpress exists)..."
-/usr/local/bin/import-content.sh || true
+/usr/local/bin/import-content.sh || echo "Import script completed with status: $?"
 
 # -------------------------------------------------------
-# 3) Avvia il normale entrypoint (in foreground)
+# 2) Avvia il normale entrypoint di WordPress
 # -------------------------------------------------------
 echo "Starting official WordPress entrypoint..."
 exec docker-entrypoint.sh "$@"
