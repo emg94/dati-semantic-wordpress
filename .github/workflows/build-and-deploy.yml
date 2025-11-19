@@ -16,6 +16,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     outputs:
       image_name_full: ${{ steps.set_image.outputs.image_name_full }}
 
@@ -36,11 +37,12 @@ jobs:
           token: ${{ secrets.WP_SCHEMA_DEPLOY_TOKEN }}
           lfs: true
 
-      # 3) Copia .wpress nel contesto di build
-      - name: Copy .wpress into build context
+      # 3) Copia il file .wpress nella build context
+      - name: Copy .wpress
         run: |
           mkdir -p imported-content
-          cp wp-schema-deploy-content/*.wpress imported-content/ 2>/dev/null || { echo "Nessun .wpress trovato!"; exit 1; }
+          cp wp-schema-deploy-content/*.wpress imported-content/ \
+            || { echo "Nessun .wpress trovato!"; exit 1; }
           ls -lh imported-content
 
       # 4) Login GHCR
@@ -67,6 +69,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
+
     steps:
       # 6) Trigger workflow Kubernetes/OpenShift
       - name: Trigger Kubernetes workflow
@@ -87,4 +90,4 @@ jobs:
       # 7) Summary
       - name: Summary Deploy
         run: |
-          echo "Docker image deployed: ${{ needs.build.outputs.image_name_full }}"
+          echo "Deploying image: ${{ needs.build.outputs.image_name_full }}"
