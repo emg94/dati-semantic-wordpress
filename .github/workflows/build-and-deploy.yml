@@ -18,14 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_name_full: ${{ steps.set_image.outputs.image_name_full }}
+
     steps:
-      # 1) Checkout repo corrente
-      - name: Checkout current repo
+      # 1) Checkout repository principale
+      - name: Checkout main repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2) Checkout branch content repo privata wp-schema-deploy
+      # 2) Checkout branch content della repo privata
       - name: Checkout wp-schema-deploy content branch
         uses: actions/checkout@v4
         with:
@@ -44,7 +45,7 @@ jobs:
 
       # 4) Login GHCR
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -60,14 +61,14 @@ jobs:
           docker push ${IMAGE}:${TAG}
           docker tag ${IMAGE}:${TAG} ${IMAGE}:latest
           docker push ${IMAGE}:latest
-
-          # Output per job deploy
+          # output per job deploy
           echo "image_name_full=${IMAGE}:${TAG}" >> $GITHUB_OUTPUT
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      # 6) Trigger workflow Kubernetes/OpenShift
       - name: Trigger Kubernetes workflow
         uses: convictional/trigger-workflow-and-wait@v1.3.0
         with:
@@ -77,12 +78,13 @@ jobs:
           workflow_file_name: update-config.yaml
           ref: dev
           wait_interval: 20
-          inputs: >
+          inputs: >-
             {
               "serviceName": "dati-semantic-wordpress",
               "imageWithNewTag": "${{ needs.build.outputs.image_name_full }}"
             }
 
-      - name: Summary
+      # 7) Summary
+      - name: Summary Deploy
         run: |
           echo "Docker image deployed: ${{ needs.build.outputs.image_name_full }}"
