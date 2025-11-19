@@ -18,14 +18,13 @@ RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli
 COPY ./imported-content/*.wpress /tmp/content.wpress
 
 # -------------------------------------------
-# Copia gli script di importazione
+# Copia lo script wrapper che gestisce install + import
 # -------------------------------------------
-COPY scripts/import-content.sh /usr/local/bin/import-content.sh
 COPY scripts/docker-entrypoint-wrapper.sh /usr/local/bin/docker-entrypoint-wrapper.sh
-RUN chmod +x /usr/local/bin/import-content.sh /usr/local/bin/docker-entrypoint-wrapper.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-wrapper.sh
 
 # -------------------------------------------
-# Entry point wrapper che importa .wpress prima di avviare WordPress
+# Entry point wrapper che cancella vecchia installazione, installa WordPress pulito e importa .wpress
 # -------------------------------------------
-ENTRYPOINT ["docker-entrypoint-wrapper.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-wrapper.sh"]
 CMD ["apache2-foreground"]
