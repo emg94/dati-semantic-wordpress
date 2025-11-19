@@ -7,16 +7,12 @@ MARKER="$WP_PATH/.wpress_imported"
 
 echo "=== Starting fresh WordPress installation with .wpress import ==="
 
-# Pulizia completa dei file WordPress esistenti
-echo "Cleaning WordPress directory..."
-find "$WP_PATH" -mindepth 1 -delete
-
-# Inizializza WordPress core
+# Inizializza WordPress core (copie dei file base)
 echo "Initializing WordPress core..."
 docker-entrypoint.sh true
 echo "WordPress core initialized"
 
-# Attendere la disponibilità del database
+# Attendi la disponibilità del database
 echo "Waiting for database connectivity..."
 for i in {1..60}; do
     if wp db check --allow-root >/dev/null 2>&1; then
@@ -31,7 +27,7 @@ for i in {1..60}; do
     sleep 2
 done
 
-# Installazione WordPress da zero
+# Installa WordPress da zero
 echo "Installing WordPress core..."
 wp core install \
     --url="https://localhost" \
@@ -43,7 +39,7 @@ wp core install \
     --allow-root
 echo "WordPress installed"
 
-# Import del contenuto .wpress
+# Importa il contenuto .wpress
 if [ -f "$CONTENT_FILE" ]; then
     echo "Found .wpress file: $CONTENT_FILE"
     wp plugin install all-in-one-wp-migration --activate --allow-root
@@ -58,3 +54,4 @@ fi
 # Avvia Apache
 echo "Starting Apache..."
 exec docker-entrypoint.sh "$@"
+
