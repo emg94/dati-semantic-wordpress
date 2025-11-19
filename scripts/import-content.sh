@@ -4,11 +4,12 @@ set -euo pipefail
 CONTENT_FILE="/tmp/content.wpress"
 MARKER="/var/www/html/.wpress_imported"
 WP_PATH="/var/www/html"
+WP_LOAD="$WP_PATH/wp-load.php"
 
 echo "Import script start..."
 
 # -------------------------------------------------------
-# 1) Skip se import già fatto
+# 0) Skip se import già fatto
 # -------------------------------------------------------
 if [ -f "$MARKER" ]; then
   echo "Marker found ($MARKER). Import already performed. Skipping."
@@ -16,17 +17,34 @@ if [ -f "$MARKER" ]; then
 fi
 
 # -------------------------------------------------------
+# 1) Attende che i file core di WordPress siano presenti
+# -------------------------------------------------------
+MAX_WAIT=60   # secondi massimi di attesa
+SLEEP=1
+n=0
+echo "Waiting up to $MAX_WAIT seconds for WordPress core files..."
+while [ ! -f "$WP_LOAD" ] && [ "$n" -lt "$MAX_WAIT" ]; do
+  sleep $SLEEP
+  n=$((n + SLEEP))
+done
+
+if [ ! -f "$WP_LOAD" ]; then
+  echo "Warning: WordPress core files not found at $WP_PATH after $MAX_WAIT seconds."
+  echo "Continuing anyway (some operations may fail)."
+fi
+
+# -------------------------------------------------------
 # 2) Pulizia WordPress solo se WP non è valido
 # -------------------------------------------------------
 if [ ! -f "$WP_PATH/wp-config.php" ]; then
   echo "Cleaning existing WordPress installation (fresh install)..."
-  rm -rf "$WP_PATH"/*
+  rm -rf "$WP_PATH"/* || true
 fi
 
 # -------------------------------------------------------
-# 3) Crea wp-config.php se manca
+# 3) Crea wp-config.php se manca (solo se wp-cli disponibile e core presente)
 # -------------------------------------------------------
-if [ ! -f "$WP_PATH/wp-config.php" ]; then
+if [ ! -f "$WP_PATH/wp-config.php" ] && command -v wp >/dev/null 2>&1 && [ -f "$WP_LOAD" ]; then
   echo "Generating wp-config.php..."
   wp config create \
     --dbname="$WORDPRESS_DB_NAME" \
@@ -38,27 +56,27 @@ if [ ! -f "$WP_PATH/wp-config.php" ]; then
 fi
 
 # -------------------------------------------------------
-# 4) aspettava il DB solo se serve davvero
+# 4) Attendere DB se necessario
 # -------------------------------------------------------
-echo "Waiting for database to become reachable..."
+echo "Checking database connectivity..."
 MAX_RETRIES=30
-SLEEP=3
+SLEEP_DB=3
 for i in $(seq 1 $MAX_RETRIES); do
   if wp db check --allow-root >/dev/null 2>&1; then
     echo "DB reachable."
     break
   fi
   echo "DB not ready yet... retry $i/$MAX_RETRIES"
-  sleep $SLEEP
+  sleep $SLEEP_DB
 done
 
 if ! wp db check --allow-root >/dev/null 2>&1; then
-  echo "ERROR: DB not reachable after $((MAX_RETRIES * SLEEP)) seconds."
+  echo "ERROR: DB not reachable after $((MAX_RETRIES * SLEEP_DB)) seconds."
   exit 1
 fi
 
 # -------------------------------------------------------
-# 5) Installazione WordPress solo se non installato
+# 5) Installazione WordPress core se non presente
 # -------------------------------------------------------
 if ! wp core is-installed --allow-root >/dev/null 2>&1; then
   echo "Installing WordPress core..."
@@ -87,4 +105,3 @@ else
 fi
 
 echo "Import script end."
-
