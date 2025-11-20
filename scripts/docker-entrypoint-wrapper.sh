@@ -42,7 +42,7 @@ done
 
 # --- Azzera e ricrea DB ---
 echo "Dropping & creating database $DB_NAME ..."
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
+mysql -h "$DB_IP" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
       -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
 
 # --- Installa WordPress ---
