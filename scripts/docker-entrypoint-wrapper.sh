@@ -13,14 +13,6 @@ SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
 DB_IP="10.242.0.132"
 
-echo "Checking DNS resolution for DB host..."
-if ! getent hosts "$DB_IP" >/dev/null; then
-    echo "ERROR: DNS cannot resolve $DB_IP"
-    exit 1
-else
-    echo "DNS resolves $DB_IP"
-fi
-
 
 echo "=== WordPress auto-install & .wpress import ==="
 
@@ -28,7 +20,7 @@ echo "=== WordPress auto-install & .wpress import ==="
 docker-entrypoint.sh true
 
 # --- Attendi DB disponibile con SSL ---
-echo "Waiting for DB at $DB_HOST (Azure MySQL requires SSL)..."
+echo "Waiting for DB at $DB_IP (Azure MySQL requires SSL)..."
 for i in {1..60}; do
     if mysql -h "$DB_IP" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
         echo "Database reachable"
@@ -44,7 +36,7 @@ done
 
 # --- Azzera e ricrea DB ---
 echo "Dropping & creating database $DB_NAME ..."
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
+mysql -h "$DB_IP" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
       -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
 
 # --- Installa WordPress ---
