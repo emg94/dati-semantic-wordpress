@@ -11,23 +11,16 @@ DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
 SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
+DB_IP="10.242.0.132"
 
 echo "Checking DNS resolution for DB host..."
-if ! getent hosts "$WORDPRESS_DB_HOST" >/dev/null; then
-    echo "ERROR: DNS cannot resolve $WORDPRESS_DB_HOST"
+if ! getent hosts "$DB_IP" >/dev/null; then
+    echo "ERROR: DNS cannot resolve $DB_IP"
     exit 1
 else
-    echo "DNS resolves $WORDPRESS_DB_HOST"
+    echo "DNS resolves $DB_IP"
 fi
 
-
-echo "Checking TCP connection to $WORDPRESS_DB_HOST:3306..."
-if ! nc -z "$WORDPRESS_DB_HOST" 3306; then
-    echo "ERROR: Cannot reach DB port 3306"
-    exit 1
-else
-    echo "DB port 3306 is open"
-fi
 
 echo "=== WordPress auto-install & .wpress import ==="
 
@@ -37,7 +30,7 @@ docker-entrypoint.sh true
 # --- Attendi DB disponibile ---
 echo "Waiting for DB at $DB_HOST ..."
 for i in {1..60}; do
-    if mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
+    if mysql -h "$DB_IP" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
         echo "Database reachable"
         break
     fi
