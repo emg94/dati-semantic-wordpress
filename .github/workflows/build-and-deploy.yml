@@ -85,3 +85,4 @@ jobs:
       - name: Summary
         run: |
           echo "Deploying image: ${{ needs.build.outputs.image_name_full }}"
+          
