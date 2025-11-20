@@ -1,10 +1,8 @@
 name: Build WP image & deploy dev
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
+  push:
+    branches: [ "main" ]
 
 env:
   REGISTRY: ghcr.io
@@ -17,21 +15,20 @@ permissions:
 
 jobs:
   build:
-    # Esegue solo se la PR è stata merged e sul repository principale
-    if: github.event.pull_request.merged == true && github.repository == 'teamdigitale/dati-semantic-wordpress'
     runs-on: ubuntu-latest
 
     outputs:
       image_name_full: ${{ steps.set_image.outputs.image_name_full }}
 
     steps:
-      - name: Checkout main repository
+      # 1) Checkout repository principale
+      - name: Checkout main repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Checkout del repository di contenuto senza if
-      - name: Checkout content branch
+      # 2) Checkout branch content della repo privata
+      - name: Checkout wp-schema-deploy content branch
         uses: actions/checkout@v4
         with:
           repository: istat/wp-schema-deploy
@@ -40,39 +37,41 @@ jobs:
           token: ${{ secrets.WP_SCHEMA_DEPLOY_TOKEN }}
           lfs: true
 
+      # 3) Copia il file .wpress nella build context
       - name: Copy .wpress
         run: |
           mkdir -p imported-content
-          if [ -d wp-schema-deploy-content ]; then
-            cp wp-schema-deploy-content/*.wpress imported-content/ || echo "Nessun .wpress trovato!"
-          else
-            echo "Repository di contenuto non disponibile, skipping .wpress copy"
-          fi
+          cp wp-schema-deploy-content/*.wpress imported-content/ \
+            || { echo "Nessun .wpress trovato!"; exit 1; }
+          ls -lh imported-content
 
-      - name: Login GHCR
+      # 4) Login GHCR
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 5) Build & push Docker image
       - name: Build Docker image
         id: set_image
         run: |
           IMAGE="$REGISTRY/$IMAGE_NAME"
-
-          echo "Building and pushing Docker image as 'latest'..."
-          docker build . --file Dockerfile --tag ${IMAGE}:latest
+          TAG="$(date +'%Y%m%d')-${{ github.run_number }}-$(git rev-parse --short HEAD)"
+          docker build . --file Dockerfile --tag ${IMAGE}:${TAG}
+          docker push ${IMAGE}:${TAG}
+          docker tag ${IMAGE}:${TAG} ${IMAGE}:latest
           docker push ${IMAGE}:latest
-
-          echo "image_name_full=${IMAGE}:latest" >> $GITHUB_OUTPUT
+          # output per job deploy
+          echo "image_name_full=${IMAGE}:${TAG}" >> $GITHUB_OUTPUT
 
   deploy:
-    if: github.event.pull_request.merged == true && github.repository == 'teamdigitale/dati-semantic-wordpress'
     runs-on: ubuntu-latest
     needs: build
 
     steps:
+      # 6) Trigger workflow Kubernetes/OpenShift
       - name: Trigger Kubernetes workflow
         uses: convictional/trigger-workflow-and-wait@v1.3.0
         with:
@@ -84,10 +83,11 @@ jobs:
           wait_interval: 20
           inputs: >-
             {
-              "serviceName": "${{ env.SERVICE_NAME }}",
+              "serviceName": "dati-semantic-wordpress",
               "imageWithNewTag": "${{ needs.build.outputs.image_name_full }}"
             }
 
-      - name: Summary
+      # 7) Summary
+      - name: Summary Deploy
         run: |
           echo "Deploying image: ${{ needs.build.outputs.image_name_full }}"
