@@ -21,14 +21,12 @@ jobs:
       image_name_full: ${{ steps.set_image.outputs.image_name_full }}
 
     steps:
-      # 1) Checkout repository principale
-      - name: Checkout main repo
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2) Checkout branch content della repo privata
-      - name: Checkout wp-schema-deploy content branch
+      - name: Checkout content branch
         uses: actions/checkout@v4
         with:
           repository: istat/wp-schema-deploy
@@ -37,33 +35,31 @@ jobs:
           token: ${{ secrets.WP_SCHEMA_DEPLOY_TOKEN }}
           lfs: true
 
-      # 3) Copia il file .wpress nella build context
       - name: Copy .wpress
         run: |
           mkdir -p imported-content
           cp wp-schema-deploy-content/*.wpress imported-content/ \
             || { echo "Nessun .wpress trovato!"; exit 1; }
-          ls -lh imported-content
 
-      # 4) Login GHCR
-      - name: Log in to GitHub Container Registry
+      - name: Login GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 5) Build & push Docker image
       - name: Build Docker image
         id: set_image
         run: |
           IMAGE="$REGISTRY/$IMAGE_NAME"
           TAG="$(date +'%Y%m%d')-${{ github.run_number }}-$(git rev-parse --short HEAD)"
+
           docker build . --file Dockerfile --tag ${IMAGE}:${TAG}
           docker push ${IMAGE}:${TAG}
+
           docker tag ${IMAGE}:${TAG} ${IMAGE}:latest
           docker push ${IMAGE}:latest
-          # output per job deploy
+
           echo "image_name_full=${IMAGE}:${TAG}" >> $GITHUB_OUTPUT
 
   deploy:
@@ -71,7 +67,6 @@ jobs:
     needs: build
 
     steps:
-      # 6) Trigger workflow Kubernetes/OpenShift
       - name: Trigger Kubernetes workflow
         uses: convictional/trigger-workflow-and-wait@v1.3.0
         with:
@@ -87,7 +82,6 @@ jobs:
               "imageWithNewTag": "${{ needs.build.outputs.image_name_full }}"
             }
 
-      # 7) Summary
-      - name: Summary Deploy
+      - name: Summary
         run: |
           echo "Deploying image: ${{ needs.build.outputs.image_name_full }}"
