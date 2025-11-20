@@ -11,32 +11,38 @@ DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
 SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
-DB_IP="10.242.0.132"
-
 
 echo "=== WordPress auto-install & .wpress import ==="
 
 # Avvia WP core in modalità "setup"
 docker-entrypoint.sh true
 
-# --- Attendi DB disponibile con SSL ---
-echo "Waiting for DB at $DB_IP (Azure MySQL requires SSL)..."
-for i in {1..60}; do
-    if mysql -h "$DB_IP" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
+# --- Attendi DB disponibile con SSL, max 30 secondi ---
+echo "Waiting for DB at $DB_HOST (Azure MySQL requires SSL)..."
+
+START_TIME=$(date +%s)
+TIMEOUT=30
+
+while true; do
+    if mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED -e "SELECT 1;" >/dev/null 2>&1; then
         echo "Database reachable"
         break
     fi
-    echo "Database not ready ($i/60), retrying..."
-    sleep 2
-    if [ $i -eq 60 ]; then
-        echo "ERROR: Database not reachable after 2 minutes"
+
+    NOW=$(date +%s)
+    ELAPSED=$(( NOW - START_TIME ))
+    if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "ERROR: Database not reachable after $TIMEOUT seconds"
         exit 1
     fi
+
+    echo "Database not ready, retrying..."
+    sleep 2
 done
 
 # --- Azzera e ricrea DB ---
 echo "Dropping & creating database $DB_NAME ..."
-mysql -h "$DB_IP" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
       -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
 
 # --- Installa WordPress ---
