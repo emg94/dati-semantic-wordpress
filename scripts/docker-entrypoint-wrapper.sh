@@ -12,15 +12,32 @@ DB_NAME="${WORDPRESS_DB_NAME}"
 SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
 
+echo "Checking DNS resolution for DB host..."
+if ! getent hosts "$WORDPRESS_DB_HOST" >/dev/null; then
+    echo "ERROR: DNS cannot resolve $WORDPRESS_DB_HOST"
+    exit 1
+else
+    echo "DNS resolves $WORDPRESS_DB_HOST"
+fi
+
+
+echo "Checking TCP connection to $WORDPRESS_DB_HOST:3306..."
+if ! nc -z "$WORDPRESS_DB_HOST" 3306; then
+    echo "ERROR: Cannot reach DB port 3306"
+    exit 1
+else
+    echo "DB port 3306 is open"
+fi
+
 echo "=== WordPress auto-install & .wpress import ==="
 
-# Avvia WP core in modalità "setup"
+# Avvia WP core in modalità "setup" (docker-entrypoint standard)
 docker-entrypoint.sh true
 
-# --- Attendi DB disponibile con SSL ---
-echo "Waiting for DB at $DB_HOST (Azure MySQL requires SSL)..."
+# --- Attendi DB disponibile ---
+echo "Waiting for DB at $DB_HOST ..."
 for i in {1..60}; do
-    if mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED -e "SELECT 1;" >/dev/null 2>&1; then
+    if mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
         echo "Database reachable"
         break
     fi
@@ -34,8 +51,7 @@ done
 
 # --- Azzera e ricrea DB ---
 echo "Dropping & creating database $DB_NAME ..."
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
-      -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
 
 # --- Installa WordPress ---
 echo "Installing WordPress core..."
