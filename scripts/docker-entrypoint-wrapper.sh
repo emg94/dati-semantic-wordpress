@@ -24,11 +24,11 @@ fi
 
 echo "=== WordPress auto-install & .wpress import ==="
 
-# Avvia WP core in modalità "setup" (docker-entrypoint standard)
+# Avvia WP core in modalità "setup"
 docker-entrypoint.sh true
 
-# --- Attendi DB disponibile ---
-echo "Waiting for DB at $DB_HOST ..."
+# --- Attendi DB disponibile con SSL ---
+echo "Waiting for DB at $DB_HOST (Azure MySQL requires SSL)..."
 for i in {1..60}; do
     if mysql -h "$DB_IP" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
         echo "Database reachable"
@@ -44,7 +44,8 @@ done
 
 # --- Azzera e ricrea DB ---
 echo "Dropping & creating database $DB_NAME ..."
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
+      -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
 
 # --- Installa WordPress ---
 echo "Installing WordPress core..."
