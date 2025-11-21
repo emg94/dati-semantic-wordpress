@@ -37,6 +37,7 @@ jobs:
           token: ${{ secrets.WP_SCHEMA_DEPLOY_TOKEN }}
           lfs: true
 
+      # 3) Copia il file .wpress nella build context
       - name: Copy .wpress
         run: |
           mkdir -p imported-content
@@ -51,6 +52,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 5) Build & push Docker image
       - name: Build Docker image
         id: set_image
         run: |
@@ -69,6 +71,7 @@ jobs:
     needs: build
 
     steps:
+      # 6) Trigger workflow Kubernetes/OpenShift
       - name: Trigger Kubernetes workflow
         uses: convictional/trigger-workflow-and-wait@v1.3.0
         with:
