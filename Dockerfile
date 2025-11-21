@@ -1,4 +1,3 @@
-# prima di fare questo bisogna cancellare tutto il contenuto nella fodler html
 FROM wordpress:6.8.3-php8.4-apache
 
 # Cambia porta Apache

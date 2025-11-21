@@ -1,44 +1,50 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Configurazioni ---
 WP_PATH="/var/www/html"
 CONTENT_FILE="/tmp/content.wpress"
-MARKER="$WP_PATH/.wpress_imported"
 PLUGIN_ZIP="/tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip"
+MARKER="${WP_PATH}/.import_done"
+
+SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
 DB_HOST="${WORDPRESS_DB_HOST}"
 DB_USER="${WORDPRESS_DB_USER}"
 DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
-SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
-echo "[bootstrap] Launching async WordPress bootstrap..."
+echo "[bootstrap] Starting WordPress bootstrap…"
 
 bootstrap_wp() {
-    echo "[bootstrap] Waiting for WordPress DB connection (max 60s)..."
-    TIMEOUT=60
-    END=$((SECONDS + TIMEOUT))
-    DB_OK=false
 
-    set +e
-    while [ $SECONDS -lt $END ]; do
-        if wp db check --allow-root --url="$SITE_URL" >/dev/null 2>&1; then
-            DB_OK=true
+    #
+    # 1) Attesa DB
+    #
+    echo "[bootstrap] Waiting for DB connection (max 60s)…"
+
+    for i in {1..20}; do
+        if wp db check --allow-root --path="$WP_PATH" --quiet > /dev/null 2>&1; then
+            echo "[bootstrap] DB is reachable."
             break
         fi
-        echo "[bootstrap] DB not ready, retrying..."
+        echo "[bootstrap] DB not reachable, retrying…"
         sleep 3
     done
-    set -e
 
-    if [ "$DB_OK" = false ]; then
-        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping install/import."
+
+    #
+    # 2) Se WordPress è già installato → esci
+    #
+    if wp core is-installed --allow-root --path="$WP_PATH" > /dev/null 2>&1; then
+        echo "[bootstrap] WordPress already installed, skipping installation."
         return
     fi
 
-    echo "[bootstrap] DB reachable — resetting and installing WordPress..."
-    wp db reset --yes --allow-root --url="$SITE_URL"
+
+    #
+    # 3) Installa WordPress
+    #
+    echo "[bootstrap] Installing WordPress…"
 
     wp core install \
         --url="$SITE_URL" \
@@ -47,44 +53,62 @@ bootstrap_wp() {
         --admin_password="admin" \
         --admin_email="admin@example.com" \
         --skip-email \
-        --allow-root
+        --allow-root \
+        --path="$WP_PATH"
 
-    # --- Installa il plugin Unlimited Extension ---
+
+    #
+    # 4) Installa plugin Unlimited Extension
+    #
     if [ -f "$PLUGIN_ZIP" ]; then
-        echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
-        wp plugin install "$PLUGIN_ZIP" --activate --allow-root
+        echo "[bootstrap] Installing Migration Unlimited Extension…"
+        wp plugin install "$PLUGIN_ZIP" --activate --allow-root --path="$WP_PATH"
     else
-        echo "[bootstrap] Plugin Unlimited Extension not found, skipping."
+        echo "[bootstrap] Unlimited Extension plugin missing, skipping."
     fi
 
-    # --- Import .wpress ---
-    if [ -f "$CONTENT_FILE" ]; then
-        echo "[bootstrap] Waiting 60s before import..."
-        sleep 60  # attesa prima dell'import per sicurezza
 
-        echo "[bootstrap] Importing .wpress content..."
-        wp ai1wm import "$CONTENT_FILE" --yes --allow-root
-        touch "$MARKER"
-        echo "[bootstrap] Import completed."
-
-        # --- Rigenerazioni post-import ---
-        echo "[bootstrap] Regenerating permalinks..."
-        wp rewrite flush --hard --allow-root
-
-        echo "[bootstrap] Regenerating Oxygen Builder shortcodes..."
-        wp oxygen regenerate --allow-root || echo "[bootstrap] Oxygen shortcode regeneration not available"
-
-        echo "[bootstrap] Clearing Oxygen Builder cache..."
-        wp oxygen clear-cache --allow-root || echo "[bootstrap] Oxygen cache clearing not available"
+    #
+    # 5) Import .wpress SOLO la prima volta
+    #
+    if [ -f "$MARKER" ]; then
+        echo "[bootstrap] Import already done, skipping."
     else
-        echo "[bootstrap] No .wpress file found, skipping import."
+        if [ -f "$CONTENT_FILE" ]; then
+            echo "[bootstrap] Waiting 40s before import… (Apache warm-up)"
+            sleep 40
+
+            echo "[bootstrap] Importing .wpress backup…"
+            wp ai1wm import "$CONTENT_FILE" --yes --allow-root --path="$WP_PATH"
+
+            touch "$MARKER"
+            echo "[bootstrap] Import completed."
+        else
+            echo "[bootstrap] No .wpress found, skipping import."
+        fi
     fi
 
-    echo "[bootstrap] WordPress bootstrap finished."
+
+    #
+    # 6) Rigenera permalink
+    #
+    echo "[bootstrap] Flushing permalinks…"
+    wp rewrite flush --hard --allow-root --path="$WP_PATH"
+
+
+    #
+    # 7) Oxygen optional
+    #
+    wp oxygen regenerate --allow-root --path="$WP_PATH" \
+        || echo "[bootstrap] Oxygen regenerate not available."
+
+    wp oxygen clear-cache --allow-root --path="$WP_PATH" \
+        || echo "[bootstrap] Oxygen cache not available."
+
+    echo "[bootstrap] Bootstrap completed."
 }
 
-# --- Lancia in background, non bloccare il postStart ---
 bootstrap_wp &
 
-echo "[bootstrap] Async bootstrap started, exiting postStart hook immediately."
+echo "[bootstrap] Launched async bootstrap."
 exit 0
