@@ -33,7 +33,7 @@ bootstrap_wp() {
     set -e
 
     if [ "$DB_OK" = false ]; then
-        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping installation."
+        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping install/import."
         return
     fi
 
