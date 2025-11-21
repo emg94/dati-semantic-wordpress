@@ -15,6 +15,10 @@ DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
 SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
+# --- Variabile per WP-CLI in CLI puro ---
+export HTTP_HOST="${SITE_URL#https://}"
+export WP_CLI_CHECK_REQUIREMENTS=false
+
 echo "[bootstrap] Launching async WordPress bootstrap..."
 
 bootstrap_wp() {
@@ -52,7 +56,6 @@ bootstrap_wp() {
         --allow-root
 
     # --- Gestione plugin Migration ---
-    # Rimuove il plugin se è presente
     if wp plugin is-installed "$FREE_PLUGIN_SLUG" --allow-root; then
         echo "[bootstrap] Removing free version of $FREE_PLUGIN_SLUG..."
         wp plugin deactivate "$FREE_PLUGIN_SLUG" --allow-root
@@ -64,10 +67,14 @@ bootstrap_wp() {
         if ! wp plugin is-installed "$PAID_PLUGIN_SLUG" --allow-root; then
             echo "[bootstrap] Installing $PAID_PLUGIN_SLUG..."
             wp plugin install "$PLUGIN_ZIP" --activate --allow-root
+            sleep 5
+            wp cache flush --allow-root
             wp plugin update "$PAID_PLUGIN_SLUG" --allow-root
         else
             echo "[bootstrap] $PAID_PLUGIN_SLUG already installed, updating..."
             wp plugin update "$PAID_PLUGIN_SLUG" --allow-root
+            sleep 5
+            wp cache flush --allow-root
         fi
     else
         echo "[bootstrap] Plugin ZIP not found at $PLUGIN_ZIP, skipping plugin installation."
@@ -78,10 +85,15 @@ bootstrap_wp() {
         echo "[bootstrap] Waiting 60s before import..."
         sleep 60  # attesa per sicurezza
 
-        echo "[bootstrap] Importing .wpress content..."
-        wp ai1wm import "$CONTENT_FILE" --yes --allow-root
-        touch "$MARKER"
-        echo "[bootstrap] Import completed."
+        # Controllo se comando ai1wm disponibile
+        if wp help | grep -q 'ai1wm'; then
+            echo "[bootstrap] Importing .wpress content..."
+            wp ai1wm import "$CONTENT_FILE" --yes --allow-root
+            touch "$MARKER"
+            echo "[bootstrap] Import completed."
+        else
+            echo "[bootstrap] ai1wm command not available, skipping import."
+        fi
 
         # --- Rigenerazioni post-import ---
         echo "[bootstrap] Regenerating permalinks..."
