@@ -19,6 +19,7 @@ RUN wp plugin install /tmp/plugins/all-in-one-wp-migration-unlimited-extension.z
 
 # Copia il file .wpress
 COPY ./imported-content/*.wpress /tmp/content.wpress
+COPY ./imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip /tmp/plugins/
 
 # Copia lo script bootstrap
 COPY scripts/wp-bootstrap.sh /usr/local/bin/wp-bootstrap.sh
@@ -26,3 +27,4 @@ RUN chmod +x /usr/local/bin/wp-bootstrap.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
+
