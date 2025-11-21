@@ -4,20 +4,12 @@ FROM wordpress:6.8.3-php8.4-apache
 RUN sed -i "s/Listen 80/Listen 8080/g" /etc/apache2/ports.conf && \
     sed -i "s/80/8080/g" /etc/apache2/sites-enabled/000-default.conf
 
-# Installa WP-CLI
+# Installa WP-CLI e client MySQL
 RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
-    chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp
+    chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp && \
+    apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*
 
-# Installa client MySQL
-RUN apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*
-
-# Copia il plugin Unlimited Extension già nella build
-COPY ./imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip /tmp/plugins/
-
-# Installa e attiva il plugin all-in-one-wp-migration unlimited
-RUN wp plugin install /tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip --activate --allow-root
-
-# Copia il file .wpress
+# Copia plugin e .wpress
 COPY ./imported-content/*.wpress /tmp/content.wpress
 COPY ./imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip /tmp/plugins/
 
