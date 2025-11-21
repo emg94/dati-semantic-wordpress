@@ -53,9 +53,6 @@ bootstrap_wp() {
     echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
     wp plugin install "$PLUGIN_ZIP" --activate --allow-root
     
-    # Verifica il nome della directory del plugin installato
-    EXT_PLUGIN_DIR=$(unzip -l "$PLUGIN_ZIP" | head -4 | tail -1 | awk '{print $4}' | cut -d'/' -f1)
-    echo "[bootstrap] Plugin installed in directory: $EXT_PLUGIN_DIR"
 
     # --- Attesa aggiuntiva per assicurarsi che i plugin siano completamente caricati ---
     echo "[bootstrap] Waiting 30s for plugins to fully load..."
