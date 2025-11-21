@@ -13,6 +13,10 @@ DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
 SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
+# --- Variabile per WP-CLI in CLI puro ---
+export HTTP_HOST="${SITE_URL#https://}"
+export WP_CLI_CHECK_REQUIREMENTS=false
+
 echo "[bootstrap] Launching async WordPress bootstrap..."
 
 bootstrap_wp() {
@@ -62,10 +66,15 @@ bootstrap_wp() {
         echo "[bootstrap] Waiting 60s before import..."
         sleep 60  # attesa prima dell'import per sicurezza
 
-        echo "[bootstrap] Importing .wpress content..."
-        wp ai1wm import "$CONTENT_FILE" --yes --allow-root
-        touch "$MARKER"
-        echo "[bootstrap] Import completed."
+        # Controllo se comando ai1wm disponibile
+        if wp help | grep -q 'ai1wm'; then
+            echo "[bootstrap] Importing .wpress content..."
+            wp ai1wm import "$CONTENT_FILE" --yes --allow-root
+            touch "$MARKER"
+            echo "[bootstrap] Import completed."
+        else
+            echo "[bootstrap] ai1wm command not available, skipping import."
+        fi
 
         # --- Rigenerazioni post-import ---
         echo "[bootstrap] Regenerating permalinks..."
