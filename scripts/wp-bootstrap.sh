@@ -10,7 +10,7 @@ DB_HOST="${WORDPRESS_DB_HOST}"
 DB_USER="${WORDPRESS_DB_USER}"
 DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
-SITE_URL="https://${HOSTNAME:-localhost}"
+SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
 echo "[bootstrap] Launching async WordPress bootstrap..."
 
