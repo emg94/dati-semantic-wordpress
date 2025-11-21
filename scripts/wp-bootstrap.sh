@@ -6,8 +6,6 @@ WP_PATH="/var/www/html"
 CONTENT_FILE="/tmp/content.wpress"
 MARKER="$WP_PATH/.wpress_imported"
 PLUGIN_ZIP="/tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip"
-FREE_PLUGIN_SLUG="all-in-one-wp-migration"
-PAID_PLUGIN_SLUG="all-in-one-wp-migration-unlimited-extension"
 
 DB_HOST="${WORDPRESS_DB_HOST}"
 DB_USER="${WORDPRESS_DB_USER}"
@@ -15,7 +13,7 @@ DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
 SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
-# --- Variabile per WP-CLI in CLI puro ---
+# Variabili WP-CLI per ambiente CLI puro
 export HTTP_HOST="${SITE_URL#https://}"
 export WP_CLI_CHECK_REQUIREMENTS=false
 
@@ -43,8 +41,24 @@ bootstrap_wp() {
         return
     fi
 
-    echo "[bootstrap] DB reachable — resetting and installing WordPress..."
-    wp db reset --yes --allow-root --url="$SITE_URL"
+    # --- Pulizia completa di html ---
+    echo "[bootstrap] Cleaning /var/www/html completely..."
+    rm -rf "$WP_PATH"/* || true
+
+    # --- Reinstallazione WordPress ---
+    echo "[bootstrap] Installing fresh WordPress..."
+    wp core download --path="$WP_PATH" --allow-root
+
+    wp config create \
+        --dbname="$DB_NAME" \
+        --dbuser="$DB_USER" \
+        --dbpass="$DB_PASSWORD" \
+        --dbhost="$DB_HOST" \
+        --path="$WP_PATH" \
+        --skip-check \
+        --allow-root
+
+    wp db create --allow-root --path="$WP_PATH"
 
     wp core install \
         --url="$SITE_URL" \
@@ -53,65 +67,42 @@ bootstrap_wp() {
         --admin_password="admin" \
         --admin_email="admin@example.com" \
         --skip-email \
+        --path="$WP_PATH" \
         --allow-root
 
-    # --- Gestione plugin Migration ---
-    if wp plugin is-installed "$FREE_PLUGIN_SLUG" --allow-root; then
-        echo "[bootstrap] Removing free version of $FREE_PLUGIN_SLUG..."
-        wp plugin deactivate "$FREE_PLUGIN_SLUG" --allow-root
-        wp plugin delete "$FREE_PLUGIN_SLUG" --allow-root
-    fi
-
-    # Installa o aggiorna plugin a pagamento
+    # --- Installa plugin a pagamento ---
     if [ -f "$PLUGIN_ZIP" ]; then
-        if ! wp plugin is-installed "$PAID_PLUGIN_SLUG" --allow-root; then
-            echo "[bootstrap] Installing $PAID_PLUGIN_SLUG..."
-            wp plugin install "$PLUGIN_ZIP" --activate --allow-root
-            sleep 5
-            wp cache flush --allow-root
-            wp plugin update "$PAID_PLUGIN_SLUG" --allow-root
-        else
-            echo "[bootstrap] $PAID_PLUGIN_SLUG already installed, updating..."
-            wp plugin update "$PAID_PLUGIN_SLUG" --allow-root
-            sleep 5
-            wp cache flush --allow-root
-        fi
+        echo "[bootstrap] Installing plugin..."
+        wp plugin install "$PLUGIN_ZIP" --activate --allow-root --path="$WP_PATH"
+        sleep 5
+        wp cache flush --allow-root --path="$WP_PATH"
     else
-        echo "[bootstrap] Plugin ZIP not found at $PLUGIN_ZIP, skipping plugin installation."
+        echo "[bootstrap] Plugin ZIP not found, skipping."
     fi
 
-    # --- Import .wpress ---
+    # --- Import .wpress se presente ---
     if [ -f "$CONTENT_FILE" ]; then
-        echo "[bootstrap] Waiting 60s before import..."
-        sleep 60  # attesa per sicurezza
+        echo "[bootstrap] Waiting 10s before import..."
+        sleep 10
 
-        # Controllo se comando ai1wm disponibile
-        if wp help | grep -q 'ai1wm'; then
+        if wp help --path="$WP_PATH" | grep -q 'ai1wm'; then
             echo "[bootstrap] Importing .wpress content..."
-            wp ai1wm import "$CONTENT_FILE" --yes --allow-root
+            wp ai1wm import "$CONTENT_FILE" --yes --allow-root --path="$WP_PATH"
             touch "$MARKER"
-            echo "[bootstrap] Import completed."
         else
             echo "[bootstrap] ai1wm command not available, skipping import."
         fi
-
-        # --- Rigenerazioni post-import ---
-        echo "[bootstrap] Regenerating permalinks..."
-        wp rewrite flush --hard --allow-root
-
-        echo "[bootstrap] Regenerating Oxygen Builder shortcodes..."
-        wp oxygen regenerate --allow-root || echo "[bootstrap] Oxygen shortcode regeneration not available"
-
-        echo "[bootstrap] Clearing Oxygen Builder cache..."
-        wp oxygen clear-cache --allow-root || echo "[bootstrap] Oxygen cache clearing not available"
-    else
-        echo "[bootstrap] No .wpress file found, skipping import."
     fi
+
+    # --- Rigenerazioni post-import ---
+    wp rewrite flush --hard --allow-root --path="$WP_PATH"
+    wp oxygen regenerate --allow-root --path="$WP_PATH" || echo "[bootstrap] Oxygen regeneration not available"
+    wp oxygen clear-cache --allow-root --path="$WP_PATH" || echo "[bootstrap] Oxygen cache clearing not available"
 
     echo "[bootstrap] WordPress bootstrap finished."
 }
 
-# --- Lancia in background ---
+# --- Esegue in background ---
 bootstrap_wp &
 
 echo "[bootstrap] Async bootstrap started, exiting postStart hook immediately."
