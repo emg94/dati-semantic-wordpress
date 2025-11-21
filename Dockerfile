@@ -11,9 +11,14 @@ RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli
 # Installa client MySQL
 RUN apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*
 
-# Copia il plugin e il file .wpress nell'immagine
-COPY ./imported-content/*.wpress /tmp/content.wpress
+# Copia il plugin Unlimited Extension già nella build
 COPY ./imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip /tmp/plugins/
+
+# Installa e attiva il plugin all-in-one-wp-migration unlimited
+RUN wp plugin install /tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip --activate --allow-root
+
+# Copia il file .wpress
+COPY ./imported-content/*.wpress /tmp/content.wpress
 
 # Copia lo script bootstrap
 COPY scripts/wp-bootstrap.sh /usr/local/bin/wp-bootstrap.sh
@@ -21,4 +26,3 @@ RUN chmod +x /usr/local/bin/wp-bootstrap.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
-
