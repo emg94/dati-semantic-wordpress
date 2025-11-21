@@ -74,10 +74,14 @@ bootstrap_wp() {
     # --- Import .wpress ---
     if [ -f "$CONTENT_FILE" ]; then
         echo "[bootstrap] Waiting 60s before import..."
-        sleep 60  # attesa prima dell'import per sicurezza
+        sleep 30  # attesa prima dell'import per sicurezza
+
+        echo "[bootstrap] Copying .wpress file to ai1wm-backups..."
+        mkdir -p "$WP_PATH/wp-content/ai1wm-backups"
+        cp "$CONTENT_FILE" "$WP_PATH/wp-content/ai1wm-backups/"
 
         echo "[bootstrap] Importing .wpress content..."
-        wp ai1wm restore "$CONTENT_FILE" --yes --allow-root
+        wp ai1wm restore "$(basename "$CONTENT_FILE")" --yes --allow-root
         touch "$MARKER"
         echo "[bootstrap] Import completed."
 
