@@ -23,8 +23,7 @@ bootstrap_wp() {
 
     set +e
     while [ $SECONDS -lt $END ]; do
-        wp db check --allow-root >/dev/null 2>&1
-        if [ $? -eq 0 ]; then
+        if wp db check --allow-root --url="$SITE_URL" >/dev/null 2>&1; then
             DB_OK=true
             break
         fi
@@ -34,12 +33,16 @@ bootstrap_wp() {
     set -e
 
     if [ "$DB_OK" = false ]; then
-        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping install/import."
+        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping installation."
         return
     fi
 
-    echo "[bootstrap] DB reachable — resetting database..."
-    wp db reset --yes --allow-root
+    echo "[bootstrap] DB reachable — resetting and installing WordPress..."
+
+
+    # Reset DB
+    echo "[bootstrap] Resetting database..."
+    wp db reset --yes --allow-root --url="$SITE_URL"
 
     echo "[bootstrap] Installing WordPress core..."
     wp core install \
