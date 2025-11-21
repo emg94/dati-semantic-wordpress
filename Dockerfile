@@ -8,9 +8,8 @@ RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli
 
 COPY ./imported-content/*.wpress /tmp/content.wpress
 
-COPY scripts/docker-entrypoint-wrapper.sh /usr/local/bin/docker-entrypoint-wrapper.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint-wrapper.sh
+COPY scripts/wp-bootstrap.sh /usr/local/bin/wp-bootstrap.sh
+RUN chmod +x /usr/local/bin/wp-bootstrap.sh
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint-wrapper.sh"]
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
-
