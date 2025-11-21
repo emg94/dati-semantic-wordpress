@@ -81,21 +81,13 @@ bootstrap_wp() {
 
     # --- Import .wpress ---
     if [ -f "$CONTENT_FILE" ]; then
-        echo "[bootstrap] Waiting 30s before restore..."
-        sleep 30
+        echo "[bootstrap] Waiting 60s before import..."
+        sleep 60  # attesa prima dell'import per sicurezza
 
-        echo "[bootstrap] Restoring .wpress content..."
-        
-        # Verifica finale che il comando sia disponibile
-        if wp ai1wm --help --allow-root >/dev/null 2>&1; then
-            wp ai1wm restore "$CONTENT_FILE" --yes --allow-root
-            touch "$MARKER"
-            echo "[bootstrap] Restore completed."
-        else
-            echo "[bootstrap] ERROR: Cannot restore - ai1wm restore command not available"
-            echo "[bootstrap] Available WP-CLI commands:"
-            wp --allow-root 2>&1 | head -20 || true
-        fi
+        echo "[bootstrap] Importing .wpress content..."
+        wp ai1wm restore "$CONTENT_FILE" --yes --allow-root
+        touch "$MARKER"
+        echo "[bootstrap] Import completed."
 
         # --- Rigenerazioni post-import ---
         echo "[bootstrap] Regenerating permalinks..."
