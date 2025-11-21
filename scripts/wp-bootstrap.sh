@@ -1,9 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# --- Configurazioni ---
 WP_PATH="/var/www/html"
 CONTENT_FILE="/tmp/content.wpress"
 MARKER="$WP_PATH/.wpress_imported"
+PLUGIN_ZIP="/tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip"
 
 DB_HOST="${WORDPRESS_DB_HOST}"
 DB_USER="${WORDPRESS_DB_USER}"
@@ -47,24 +49,25 @@ bootstrap_wp() {
         --skip-email \
         --allow-root
 
-    # Install & update plugin All-in-One WP Migration
-    echo "[bootstrap] Installing/activating All-in-One WP Migration plugin..."
-    wp plugin install all-in-one-wp-migration --activate --allow-root
-    echo "[bootstrap] Updating All-in-One WP Migration plugin..."
-    wp plugin update all-in-one-wp-migration --allow-root
+    # --- Installa il plugin Unlimited Extension ---
+    if [ -f "$PLUGIN_ZIP" ]; then
+        echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
+        wp plugin install "$PLUGIN_ZIP" --activate --allow-root
+    else
+        echo "[bootstrap] Plugin Unlimited Extension not found, skipping."
+    fi
 
-    # Attendi un minuto prima di import
-    echo "[bootstrap] Waiting 60s before importing .wpress..."
-    sleep 60
-
-    # Import .wpress
+    # --- Import .wpress ---
     if [ -f "$CONTENT_FILE" ]; then
+        echo "[bootstrap] Waiting 60s before import..."
+        sleep 60  # attesa prima dell'import per sicurezza
+
         echo "[bootstrap] Importing .wpress content..."
         wp ai1wm import "$CONTENT_FILE" --yes --allow-root
         touch "$MARKER"
         echo "[bootstrap] Import completed."
 
-        # Rigenerazioni post-import
+        # --- Rigenerazioni post-import ---
         echo "[bootstrap] Regenerating permalinks..."
         wp rewrite flush --hard --allow-root
 
@@ -80,7 +83,7 @@ bootstrap_wp() {
     echo "[bootstrap] WordPress bootstrap finished."
 }
 
-# Esegui in background, non bloccare il postStart
+# --- Lancia in background, non bloccare il postStart ---
 bootstrap_wp &
 
 echo "[bootstrap] Async bootstrap started, exiting postStart hook immediately."
