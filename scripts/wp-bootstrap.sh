@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Configurazioni ---
 WP_PATH="/var/www/html"
 CONTENT_FILE="/tmp/content.wpress"
 MARKER="$WP_PATH/.wpress_imported"
@@ -14,7 +13,6 @@ SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
 echo "[bootstrap] Launching async WordPress bootstrap..."
 
-# --- Funzione bootstrap ---
 bootstrap_wp() {
     echo "[bootstrap] Waiting for WordPress DB connection (max 60s)..."
     TIMEOUT=60
@@ -38,12 +36,8 @@ bootstrap_wp() {
     fi
 
     echo "[bootstrap] DB reachable — resetting and installing WordPress..."
-
-    # Reset DB
-    echo "[bootstrap] Resetting database..."
     wp db reset --yes --allow-root --url="$SITE_URL"
 
-    echo "[bootstrap] Installing WordPress core..."
     wp core install \
         --url="$SITE_URL" \
         --title="Dev WP" \
@@ -53,18 +47,9 @@ bootstrap_wp() {
         --skip-email \
         --allow-root
 
-    # Install & update All-in-One WP Migration Unlimited Extension
-    if [ -f "/tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip" ]; then
-        echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
-        wp plugin install /tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip --activate --allow-root
-        echo "[bootstrap] Updating plugin to latest version..."
-        wp plugin update all-in-one-wp-migration-unlimited-extension --allow-root
-    fi
-
     # Import .wpress
     if [ -f "$CONTENT_FILE" ]; then
         echo "[bootstrap] Importing .wpress content..."
-        wp plugin install all-in-one-wp-migration --activate --allow-root
         wp ai1wm import "$CONTENT_FILE" --yes --allow-root
         touch "$MARKER"
         echo "[bootstrap] Import completed."
@@ -85,7 +70,7 @@ bootstrap_wp() {
     echo "[bootstrap] WordPress bootstrap finished."
 }
 
-# --- Lancia in background ---
+# Esegui in background, non bloccare il postStart
 bootstrap_wp &
 
 echo "[bootstrap] Async bootstrap started, exiting postStart hook immediately."
