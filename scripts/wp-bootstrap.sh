@@ -49,35 +49,65 @@ bootstrap_wp() {
         --skip-email \
         --allow-root
 
-    # --- Installa il plugin Unlimited Extension ---
-    if [ -f "$PLUGIN_ZIP" ]; then
-        echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
-        wp plugin install "$PLUGIN_ZIP" --activate --allow-root
-    else
-        echo "[bootstrap] Plugin Unlimited Extension not found, skipping."
+    # --- Installa SOLO la versione Unlimited dal tuo ZIP ---
+    echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
+    wp plugin install "$PLUGIN_ZIP" --activate --allow-root
+    
+    # Verifica il nome della directory del plugin installato
+    EXT_PLUGIN_DIR=$(unzip -l "$PLUGIN_ZIP" | head -4 | tail -1 | awk '{print $4}' | cut -d'/' -f1)
+    echo "[bootstrap] Plugin installed in directory: $EXT_PLUGIN_DIR"
+
+    # --- Rigenera WP-CLI cache per scoprire i nuovi comandi ---
+    echo "[bootstrap] Regenerating WP-CLI command cache..."
+    wp package list --allow-root >/dev/null 2>&1 || true
+    wp cli info --allow-root >/dev/null 2>&1 || true
+
+    # --- Attesa aggiuntiva per assicurarsi che i plugin siano completamente caricati ---
+    echo "[bootstrap] Waiting 30s for plugins to fully load..."
+    sleep 30
+
+    # --- Verifica che il comando ai1wm sia disponibile ---
+    if ! wp ai1wm --help --allow-root >/dev/null 2>&1; then
+        echo "[bootstrap] ERROR: ai1wm commands not available. Available subcommands:"
+        wp ai1wm --allow-root 2>&1 || true
+        echo "[bootstrap] Attempting to reactivate plugin..."
+        
+        # Riattiva il plugin
+        wp plugin activate "$EXT_PLUGIN_DIR" --allow-root
+        
+        # Riprova dopo l'attivazione
+        sleep 10
     fi
 
     # --- Import .wpress ---
     if [ -f "$CONTENT_FILE" ]; then
-        echo "[bootstrap] Waiting 60s before import..."
-        sleep 60  # attesa prima dell'import per sicurezza
+        echo "[bootstrap] Waiting 30s before restore..."
+        sleep 30
 
-        echo "[bootstrap] Importing .wpress content..."
-        wp ai1wm import "$CONTENT_FILE" --yes --allow-root
-        touch "$MARKER"
-        echo "[bootstrap] Import completed."
+        echo "[bootstrap] Restoring .wpress content..."
+        
+        # Verifica finale che il comando sia disponibile
+        if wp ai1wm --help --allow-root >/dev/null 2>&1; then
+            wp ai1wm restore "$CONTENT_FILE" --yes --allow-root
+            touch "$MARKER"
+            echo "[bootstrap] Restore completed."
+        else
+            echo "[bootstrap] ERROR: Cannot restore - ai1wm restore command not available"
+            echo "[bootstrap] Available WP-CLI commands:"
+            wp --allow-root 2>&1 | head -20 || true
+        fi
 
         # --- Rigenerazioni post-import ---
         echo "[bootstrap] Regenerating permalinks..."
         wp rewrite flush --hard --allow-root
 
         echo "[bootstrap] Regenerating Oxygen Builder shortcodes..."
-        wp oxygen regenerate --allow-root || echo "[bootstrap] Oxygen shortcode regeneration not available"
+        wp oxygen regenerate --allow-root 2>/dev/null || echo "[bootstrap] Oxygen shortcode regeneration not available"
 
         echo "[bootstrap] Clearing Oxygen Builder cache..."
-        wp oxygen clear-cache --allow-root || echo "[bootstrap] Oxygen cache clearing not available"
+        wp oxygen clear-cache --allow-root 2>/dev/null || echo "[bootstrap] Oxygen cache clearing not available"
     else
-        echo "[bootstrap] No .wpress file found, skipping import."
+        echo "[bootstrap] No .wpress file found at $CONTENT_FILE, skipping restore."
     fi
 
     echo "[bootstrap] WordPress bootstrap finished."
