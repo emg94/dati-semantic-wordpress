@@ -47,6 +47,16 @@ bootstrap_wp() {
         --skip-email \
         --allow-root
 
+    # Install & update plugin All-in-One WP Migration
+    echo "[bootstrap] Installing/activating All-in-One WP Migration plugin..."
+    wp plugin install all-in-one-wp-migration --activate --allow-root
+    echo "[bootstrap] Updating All-in-One WP Migration plugin..."
+    wp plugin update all-in-one-wp-migration --allow-root
+
+    # Attendi un minuto prima di import
+    echo "[bootstrap] Waiting 60s before importing .wpress..."
+    sleep 60
+
     # Import .wpress
     if [ -f "$CONTENT_FILE" ]; then
         echo "[bootstrap] Importing .wpress content..."
