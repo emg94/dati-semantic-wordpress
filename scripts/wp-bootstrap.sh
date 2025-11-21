@@ -59,7 +59,7 @@ bootstrap_wp() {
         wp plugin install all-in-one-wp-migration --activate --allow-root
         wp ai1wm import "$CONTENT_FILE" --yes --allow-root
         touch "$MARKER"
-        rm -f "$CONTENT_FILE"
+        # rm -f "$CONTENT_FILE" --> rm: cannot remove '/tmp/content.wpress': Operation not permitted
         echo "[bootstrap] Import completed."
     else
         echo "[bootstrap] No .wpress file found, skipping import."
