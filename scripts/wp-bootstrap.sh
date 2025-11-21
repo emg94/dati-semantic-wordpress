@@ -16,34 +16,32 @@ echo "[bootstrap] Launching async WordPress bootstrap..."
 
 # --- Funzione bootstrap ---
 bootstrap_wp() {
-    # Attendi massimo 10 secondi il DB
-    echo "[bootstrap] Waiting for DB (${DB_HOST}) max 10s..."
-    TIMEOUT=10
+    echo "[bootstrap] Waiting for WordPress DB connection (max 60s)..."
+    TIMEOUT=60
     END=$((SECONDS + TIMEOUT))
     DB_OK=false
 
     set +e
     while [ $SECONDS -lt $END ]; do
-        mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
-            -e "SELECT 1;" >/dev/null 2>&1
+        wp db check --allow-root >/dev/null 2>&1
         if [ $? -eq 0 ]; then
             DB_OK=true
             break
         fi
-        sleep 1
+        echo "[bootstrap] DB not ready, retrying..."
+        sleep 3
     done
     set -e
 
     if [ "$DB_OK" = false ]; then
-        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping installation."
+        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping install/import."
         return
     fi
 
-    echo "[bootstrap] DB reachable — installing WordPress..."
+    echo "[bootstrap] DB reachable — resetting database..."
+    wp db reset --yes --allow-root
 
-    mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-mode=REQUIRED \
-          -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
-
+    echo "[bootstrap] Installing WordPress core..."
     wp core install \
         --url="$SITE_URL" \
         --title="Dev WP" \
@@ -54,12 +52,14 @@ bootstrap_wp() {
         --allow-root
 
     if [ -f "$CONTENT_FILE" ]; then
-        echo "[bootstrap] Importing .wpress..."
+        echo "[bootstrap] Importing .wpress content..."
         wp plugin install all-in-one-wp-migration --activate --allow-root
         wp ai1wm import "$CONTENT_FILE" --yes --allow-root
         touch "$MARKER"
         rm -f "$CONTENT_FILE"
         echo "[bootstrap] Import completed."
+    else
+        echo "[bootstrap] No .wpress file found, skipping import."
     fi
 
     echo "[bootstrap] WordPress bootstrap finished."
