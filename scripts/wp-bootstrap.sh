@@ -57,11 +57,6 @@ bootstrap_wp() {
     EXT_PLUGIN_DIR=$(unzip -l "$PLUGIN_ZIP" | head -4 | tail -1 | awk '{print $4}' | cut -d'/' -f1)
     echo "[bootstrap] Plugin installed in directory: $EXT_PLUGIN_DIR"
 
-    # --- Rigenera WP-CLI cache per scoprire i nuovi comandi ---
-    echo "[bootstrap] Regenerating WP-CLI command cache..."
-    wp package list --allow-root >/dev/null 2>&1 || true
-    wp cli info --allow-root >/dev/null 2>&1 || true
-
     # --- Attesa aggiuntiva per assicurarsi che i plugin siano completamente caricati ---
     echo "[bootstrap] Waiting 30s for plugins to fully load..."
     sleep 30
