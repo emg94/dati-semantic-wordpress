@@ -39,7 +39,6 @@ bootstrap_wp() {
 
     echo "[bootstrap] DB reachable — resetting and installing WordPress..."
 
-
     # Reset DB
     echo "[bootstrap] Resetting database..."
     wp db reset --yes --allow-root --url="$SITE_URL"
@@ -54,13 +53,31 @@ bootstrap_wp() {
         --skip-email \
         --allow-root
 
+    # Install & update All-in-One WP Migration Unlimited Extension
+    if [ -f "/tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip" ]; then
+        echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
+        wp plugin install /tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip --activate --allow-root
+        echo "[bootstrap] Updating plugin to latest version..."
+        wp plugin update all-in-one-wp-migration-unlimited-extension --allow-root
+    fi
+
+    # Import .wpress
     if [ -f "$CONTENT_FILE" ]; then
         echo "[bootstrap] Importing .wpress content..."
         wp plugin install all-in-one-wp-migration --activate --allow-root
         wp ai1wm import "$CONTENT_FILE" --yes --allow-root
         touch "$MARKER"
-        # rm -f "$CONTENT_FILE" --> rm: cannot remove '/tmp/content.wpress': Operation not permitted
         echo "[bootstrap] Import completed."
+
+        # Rigenerazioni post-import
+        echo "[bootstrap] Regenerating permalinks..."
+        wp rewrite flush --hard --allow-root
+
+        echo "[bootstrap] Regenerating Oxygen Builder shortcodes..."
+        wp oxygen regenerate --allow-root || echo "[bootstrap] Oxygen shortcode regeneration not available"
+
+        echo "[bootstrap] Clearing Oxygen Builder cache..."
+        wp oxygen clear-cache --allow-root || echo "[bootstrap] Oxygen cache clearing not available"
     else
         echo "[bootstrap] No .wpress file found, skipping import."
     fi
