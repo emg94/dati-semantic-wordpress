@@ -6,6 +6,8 @@ RUN sed -i "s/Listen 80/Listen 8080/g" /etc/apache2/ports.conf && \
 RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && \
     chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp
 
+RUN apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*
+
 COPY ./imported-content/*.wpress /tmp/content.wpress
 
 COPY scripts/wp-bootstrap.sh /usr/local/bin/wp-bootstrap.sh
