@@ -4,7 +4,11 @@ set -euo pipefail
 WP_PATH="/var/www/html"
 CONTENT_FILE="/tmp/content.wpress"
 MARKER="$WP_PATH/.wpress_imported"
+
 PLUGIN_DIR="/tmp/plugins"
+PLUGIN_ZIP="$PLUGIN_DIR/all-in-one-wp-migration-unlimited-extension.zip"
+OXYGEN_ZIP="$PLUGIN_DIR/oxygen.zip"
+OXYGEN_CLI_ZIP="$PLUGIN_DIR/oxygen-wp-cli.zip"
 
 DB_HOST="${WORDPRESS_DB_HOST}"
 DB_USER="${WORDPRESS_DB_USER}"
@@ -49,7 +53,7 @@ bootstrap_wp() {
         --allow-root
 
     echo "[bootstrap] Installing AI1WM Unlimited..."
-    wp plugin install "$PLUGIN_DIR/all-in-one-wp-migration-unlimited-extension.zip" --activate --allow-root
+    wp plugin install "$PLUGIN_ZIP" --activate --allow-root
 
     echo "[bootstrap] Waiting 10s before running import..."
     sleep 10
@@ -62,11 +66,11 @@ bootstrap_wp() {
         echo "[bootstrap] Importing .wpress..."
         wp ai1wm restore "$(basename "$CONTENT_FILE")" --yes --allow-root
 
-        echo "[bootstrap] Reinstalling Oxygen Builder..."
-        wp plugin install "$PLUGIN_DIR/oxygen.zip" --activate --allow-root || true
+        echo "[bootstrap] Reinstalling Oxygen Builder plugin..."
+        wp plugin install "$OXYGEN_ZIP" --activate --allow-root || true
 
         echo "[bootstrap] Installing Oxygen WP-CLI addon..."
-        wp plugin install "$PLUGIN_DIR/oxygen-wp-cli.zip" --activate --allow-root || true
+        wp plugin install "$OXYGEN_CLI_ZIP" --activate --allow-root || true
 
         echo "[bootstrap] Regenerating permalinks..."
         wp rewrite flush --hard --allow-root
