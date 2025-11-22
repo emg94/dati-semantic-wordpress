@@ -35,18 +35,27 @@ jobs:
           token: ${{ secrets.WP_SCHEMA_DEPLOY_TOKEN }}
           lfs: true
 
-      - name: Copy .wpress and plugin
+      - name: Copy .wpress and plugins
         run: |
           mkdir -p imported-content
           # Copia il .wpress
           cp wp-schema-deploy-content/*.wpress imported-content/ \
             || { echo "Nessun .wpress trovato!"; exit 1; }
+
           # Copia il plugin Unlimited Extension
           mkdir -p imported-content/plugins
           cp wp-schema-deploy-content/all-in-one-wp-migration-unlimited-extension.zip imported-content/plugins/ \
             || { echo "Plugin Unlimited Extension non trovato!"; exit 1; }
+
+          # Copia i plugin di Oxygen
+          cp wp-schema-deploy-content/oxygen.zip imported-content/plugins/ \
+            || { echo "Plugin Oxygen non trovato!"; exit 1; }
+          cp wp-schema-deploy-content/oxygen-wp-cli.zip imported-content/plugins/ \
+            || { echo "Plugin Oxygen WP-CLI non trovato!"; exit 1; }
+
           ls -lh imported-content
           ls -lh imported-content/plugins
+
 
       - name: Login GHCR
         uses: docker/login-action@v3
