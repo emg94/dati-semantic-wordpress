@@ -1,17 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Configurazioni ---
 WP_PATH="/var/www/html"
 CONTENT_FILE="/tmp/content.wpress"
 MARKER="$WP_PATH/.wpress_imported"
-PLUGIN_ZIP="/tmp/plugins/all-in-one-wp-migration-unlimited-extension.zip"
+PLUGIN_DIR="/tmp/plugins"
 
 DB_HOST="${WORDPRESS_DB_HOST}"
 DB_USER="${WORDPRESS_DB_USER}"
 DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
-SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
+SITE_URL="https://${WORDPRESS_SITE_URL}"
 
 echo "[bootstrap] Launching async WordPress bootstrap..."
 
@@ -33,11 +32,11 @@ bootstrap_wp() {
     set -e
 
     if [ "$DB_OK" = false ]; then
-        echo "[bootstrap] DB not reachable within ${TIMEOUT}s — skipping install/import."
+        echo "[bootstrap] DB not reachable — skipping."
         return
     fi
 
-    echo "[bootstrap] DB reachable — resetting and installing WordPress..."
+    echo "[bootstrap] DB OK — resetting WordPress..."
     wp db reset --yes --allow-root --url="$SITE_URL"
 
     wp core install \
@@ -49,60 +48,44 @@ bootstrap_wp() {
         --skip-email \
         --allow-root
 
-    # --- Installa SOLO la versione Unlimited dal tuo ZIP ---
-    echo "[bootstrap] Installing All-in-One WP Migration Unlimited Extension..."
-    wp plugin install "$PLUGIN_ZIP" --activate --allow-root
-    
+    echo "[bootstrap] Installing AI1WM Unlimited..."
+    wp plugin install "$PLUGIN_DIR/all-in-one-wp-migration-unlimited-extension.zip" --activate --allow-root
 
-    # --- Attesa aggiuntiva per assicurarsi che i plugin siano completamente caricati ---
-    echo "[bootstrap] Waiting 30s for plugins to fully load..."
-    sleep 30
+    echo "[bootstrap] Waiting 10s before running import..."
+    sleep 10
 
-    # --- Verifica che il comando ai1wm sia disponibile ---
-    if ! wp ai1wm --help --allow-root >/dev/null 2>&1; then
-        echo "[bootstrap] ERROR: ai1wm commands not available. Available subcommands:"
-        wp ai1wm --allow-root 2>&1 || true
-        echo "[bootstrap] Attempting to reactivate plugin..."
-        
-        # Riattiva il plugin
-        wp plugin activate "$EXT_PLUGIN_DIR" --allow-root
-        
-        # Riprova dopo l'attivazione
-        sleep 10
-    fi
-
-    # --- Import .wpress ---
     if [ -f "$CONTENT_FILE" ]; then
-        echo "[bootstrap] Waiting 60s before import..."
-        sleep 30  # attesa prima dell'import per sicurezza
-
-        echo "[bootstrap] Copying .wpress file to ai1wm-backups..."
+        echo "[bootstrap] Copying .wpress into ai1wm-backups..."
         mkdir -p "$WP_PATH/wp-content/ai1wm-backups"
         cp "$CONTENT_FILE" "$WP_PATH/wp-content/ai1wm-backups/"
 
-        echo "[bootstrap] Importing .wpress content..."
+        echo "[bootstrap] Importing .wpress..."
         wp ai1wm restore "$(basename "$CONTENT_FILE")" --yes --allow-root
-        touch "$MARKER"
-        echo "[bootstrap] Import completed."
 
-        # --- Rigenerazioni post-import ---
+        echo "[bootstrap] Reinstalling Oxygen Builder..."
+        wp plugin install "$PLUGIN_DIR/oxygen.zip" --activate --allow-root || true
+
+        echo "[bootstrap] Installing Oxygen WP-CLI addon..."
+        wp plugin install "$PLUGIN_DIR/oxygen-wp-cli.zip" --activate --allow-root || true
+
         echo "[bootstrap] Regenerating permalinks..."
         wp rewrite flush --hard --allow-root
 
-        echo "[bootstrap] Regenerating Oxygen Builder shortcodes..."
-        wp oxygen regenerate --allow-root 2>/dev/null || echo "[bootstrap] Oxygen shortcode regeneration not available"
+        echo "[bootstrap] Regenerating Oxygen shortcodes..."
+        wp oxygen regenerate --allow-root || echo "[bootstrap] Oxygen regenerate not available"
 
-        echo "[bootstrap] Clearing Oxygen Builder cache..."
-        wp oxygen clear-cache --allow-root 2>/dev/null || echo "[bootstrap] Oxygen cache clearing not available"
+        echo "[bootstrap] Clearing Oxygen cache..."
+        wp oxygen clear-cache --allow-root || echo "[bootstrap] Oxygen cache clear not available"
+
+        touch "$MARKER"
+        echo "[bootstrap] Import and Oxygen rebuild completed."
     else
-        echo "[bootstrap] No .wpress file found at $CONTENT_FILE, skipping restore."
+        echo "[bootstrap] No .wpress found, skipping restore."
     fi
 
-    echo "[bootstrap] WordPress bootstrap finished."
+    echo "[bootstrap] Bootstrap finished."
 }
 
-# --- Lancia in background, non bloccare il postStart ---
 bootstrap_wp &
-
-echo "[bootstrap] Async bootstrap started, exiting postStart hook immediately."
+echo "[bootstrap] Async bootstrap launched."
 exit 0
