@@ -11,10 +11,8 @@ RUN apt-get update && \
     chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp && \
     rm -rf /var/lib/apt/lists/*
 
-# Copia backup .wpress
+# Copia plugin e .wpress
 COPY ./imported-content/*.wpress /tmp/content.wpress
-
-# Copia plugin (AI1WM Unlimited)
 COPY ./imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip /tmp/plugins/
 
 # Copia lo script bootstrap
@@ -23,5 +21,3 @@ RUN chmod +x /usr/local/bin/wp-bootstrap.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
-
-
