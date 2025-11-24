@@ -67,14 +67,17 @@ bootstrap_wp() {
         echo "[bootstrap] Regenerating permalinks..."
         wp rewrite flush --hard --allow-root
 
-        echo "[bootstrap] Regenerating Oxygen shortcodes..."
-        wp oxygen regenerate --allow-root || echo "[bootstrap] Oxygen regenerate not available"
+        # Rigenerare shortcode Oxygen (post)
+        wp eval 'if (function_exists("ct_sign_shortcode")) { ct_sign_shortcode("post"); }' --allow-root
 
-        echo "[bootstrap] Clearing Oxygen cache..."
-        wp oxygen clear-cache --allow-root || echo "[bootstrap] Oxygen cache clear not available"
+        # Rigenerare shortcode Oxygen (page)
+        wp eval 'if (function_exists("ct_sign_shortcode")) { ct_sign_shortcode("page"); }' --allow-root
+
+        # Rigenerare cache CSS Oxygen
+        wp eval 'if (function_exists("oxygen_vsb_cache_css")) { oxygen_vsb_cache_css(); }' --allow-root
 
         touch "$MARKER"
-        echo "[bootstrap] Import and Oxygen rebuild completed."
+        echo "[bootstrap] Import completed."
     else
         echo "[bootstrap] No .wpress found, skipping restore."
     fi
