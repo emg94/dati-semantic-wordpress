@@ -1,1 +1,1 @@
-# dati-semantic-wordpress-v1.13
+# dati-semantic-wordpress-v1.14

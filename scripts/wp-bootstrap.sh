@@ -53,6 +53,9 @@ bootstrap_wp() {
     echo "[bootstrap] Installing AI1WM Unlimited..."
     wp plugin install "$PLUGIN_ZIP" --activate --allow-root
 
+    echo "[bootstrap] Updating AI1WM Unlimited plugin..."
+    wp plugin update all-in-one-wp-migration-unlimited-extension --allow-root || echo "[bootstrap] Plugin update failed or no update available"
+
     echo "[bootstrap] Waiting 10s before running import..."
     sleep 10
 
