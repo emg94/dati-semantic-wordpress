@@ -17,6 +17,7 @@ SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 echo "[bootstrap] Launching async WordPress bootstrap..."
 
 bootstrap_wp() {
+
     echo "[bootstrap] Waiting for WordPress DB connection (max 60s)..."
     TIMEOUT=60
     END=$((SECONDS + TIMEOUT))
@@ -64,20 +65,38 @@ bootstrap_wp() {
         echo "[bootstrap] Importing .wpress..."
         wp ai1wm restore "$(basename "$CONTENT_FILE")" --yes --allow-root
 
-        echo "[bootstrap] Regenerating permalinks..."
+        echo "[bootstrap] Flushing permalinks..."
         wp rewrite flush --hard --allow-root
 
-        # Rigenerare shortcode Oxygen (post)
-        wp eval 'if (function_exists("ct_sign_shortcode")) { ct_sign_shortcode("post"); }' --allow-root
+        echo "[bootstrap] Forcing WordPress reload..."
+        wp cache flush --allow-root
+        wp transient delete --all --allow-root
+        curl -k -s "$SITE_URL" >/dev/null 2>&1
 
-        # Rigenerare shortcode Oxygen (page)
-        wp eval 'if (function_exists("ct_sign_shortcode")) { ct_sign_shortcode("page"); }' --allow-root
+        echo "[bootstrap] Regenerating Oxygen shortcodes (all post types)..."
+        wp eval '
+            if (function_exists("ct_sign_shortcode")) {
+                $types = get_post_types(["public" => true]);
+                foreach ($types as $t) {
+                    ct_sign_shortcode($t);
+                }
+            } else {
+                echo "Oxygen shortcode function not found.\n";
+            }
+        ' --allow-root
 
-        # Rigenerare cache CSS Oxygen
-        wp eval 'if (function_exists("oxygen_vsb_cache_css")) { oxygen_vsb_cache_css(); }' --allow-root
+        echo "[bootstrap] Regenerating Oxygen CSS cache..."
+        wp eval '
+            if (function_exists("oxygen_vsb_cache_css")) {
+                oxygen_vsb_cache_css();
+            } else {
+                echo "Oxygen CSS cache function not found.\n";
+            }
+        ' --allow-root
 
         touch "$MARKER"
         echo "[bootstrap] Import completed."
+
     else
         echo "[bootstrap] No .wpress found, skipping restore."
     fi
