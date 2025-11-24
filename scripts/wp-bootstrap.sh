@@ -57,6 +57,7 @@ bootstrap_wp() {
     sleep 10
 
     if [ -f "$CONTENT_FILE" ]; then
+
         echo "[bootstrap] Copying .wpress into ai1wm-backups..."
         mkdir -p "$WP_PATH/wp-content/ai1wm-backups"
         cp "$CONTENT_FILE" "$WP_PATH/wp-content/ai1wm-backups/"
