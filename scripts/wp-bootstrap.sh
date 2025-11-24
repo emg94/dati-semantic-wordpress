@@ -7,14 +7,12 @@ MARKER="$WP_PATH/.wpress_imported"
 
 PLUGIN_DIR="/tmp/plugins"
 PLUGIN_ZIP="$PLUGIN_DIR/all-in-one-wp-migration-unlimited-extension.zip"
-OXYGEN_ZIP="$PLUGIN_DIR/oxygen.zip"
-OXYGEN_CLI_ZIP="$PLUGIN_DIR/oxygen-wp-cli.zip"
 
 DB_HOST="${WORDPRESS_DB_HOST}"
 DB_USER="${WORDPRESS_DB_USER}"
 DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
 DB_NAME="${WORDPRESS_DB_NAME}"
-SITE_URL="https://${WORDPRESS_SITE_URL}"
+SITE_URL="https://wp-ndc-dev.apps.cloudpub.testedev.istat.it"
 
 echo "[bootstrap] Launching async WordPress bootstrap..."
 
@@ -65,12 +63,6 @@ bootstrap_wp() {
 
         echo "[bootstrap] Importing .wpress..."
         wp ai1wm restore "$(basename "$CONTENT_FILE")" --yes --allow-root
-
-        echo "[bootstrap] Reinstalling Oxygen Builder plugin..."
-        wp plugin install "$OXYGEN_ZIP" --activate --allow-root || true
-
-        echo "[bootstrap] Installing Oxygen WP-CLI addon..."
-        wp plugin install "$OXYGEN_CLI_ZIP" --activate --allow-root || true
 
         echo "[bootstrap] Regenerating permalinks..."
         wp rewrite flush --hard --allow-root

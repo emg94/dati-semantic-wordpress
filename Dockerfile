@@ -14,10 +14,8 @@ RUN apt-get update && \
 # Copia backup .wpress
 COPY ./imported-content/*.wpress /tmp/content.wpress
 
-# Copia plugin (AI1WM Unlimited + Oxygen)
+# Copia plugin (AI1WM Unlimited)
 COPY ./imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip /tmp/plugins/
-COPY ./imported-content/plugins/oxygen.zip /tmp/plugins/
-COPY ./imported-content/plugins/oxygen-wp-cli.zip /tmp/plugins/
 
 # Copia lo script bootstrap
 COPY scripts/wp-bootstrap.sh /usr/local/bin/wp-bootstrap.sh
