@@ -72,13 +72,29 @@ bootstrap_wp() {
         wp rewrite flush --hard --allow-root
 
         # 1. Shortcode per POST
-        wp oxygen sign-shortcode post --allow-root
+        echo "[debug] Regenerating Oxygen shortcodes for POST..."
+        if wp eval 'if ( function_exists("Oxygen_vsb") ) { Oxygen_vsb()->sign_shortcodes("post"); }' --allow-root --url="$SITE_URL"; then
+            echo "[debug] Shortcodes for POST generated successfully."
+        else
+            echo "[debug] Failed to generate shortcodes for POST."
+        fi
 
-        # 2. Shortcode per PAGE (già fatto)
-        wp oxygen sign-shortcode page --allow-root
+        # 2. Shortcode per PAGE
+        echo "[debug] Regenerating Oxygen shortcodes for PAGE..."
+        if wp eval 'if ( function_exists("Oxygen_vsb") ) { Oxygen_vsb()->sign_shortcodes("page"); }' --allow-root --url="$SITE_URL"; then
+            echo "[debug] Shortcodes for PAGE generated successfully."
+        else
+            echo "[debug] Failed to generate shortcodes for PAGE."
+        fi
 
         # 3. Cache CSS
-        wp oxygen css-cache --allow-root
+        echo "[debug] Regenerating Oxygen CSS cache..."
+        if wp eval 'if ( function_exists("Oxygen_vsb") ) { Oxygen_vsb()->generate_css_cache(); }' --allow-root --url="$SITE_URL"; then
+            echo "[debug] CSS cache regenerated successfully."
+        else
+            echo "[debug] Failed to regenerate CSS cache."
+        fi
+
 
         touch "$MARKER"
         echo "[bootstrap] Import completed."
