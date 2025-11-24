@@ -47,12 +47,6 @@ jobs:
           cp wp-schema-deploy-content/all-in-one-wp-migration-unlimited-extension.zip imported-content/plugins/ \
             || { echo "Plugin Unlimited Extension non trovato!"; exit 1; }
 
-          # Copia i plugin di Oxygen
-          cp wp-schema-deploy-content/oxygen.zip imported-content/plugins/ \
-            || { echo "Plugin Oxygen non trovato!"; exit 1; }
-          cp wp-schema-deploy-content/oxygen-wp-cli.zip imported-content/plugins/ \
-            || { echo "Plugin Oxygen WP-CLI non trovato!"; exit 1; }
-
           ls -lh imported-content
           ls -lh imported-content/plugins
 
