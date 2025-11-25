@@ -32,10 +32,10 @@ jobs:
 
       - name: Retrieve files from DB
         env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_USER: ${{ secrets.DB_USER_WP }}
+          DB_HOST: "db-testedev-mysql.mysql.database.azure.com"
+          DB_USER: "sv_ndc_bckwp_ddl"
           DB_PASSWORD: ${{ secrets.DB_PASSWORD_WP }}
-          DB_NAME: ${{ secrets.DB_NAME_WP }}
+          DB_NAME: sv_ndc_bckwp
         run: |
           mkdir -p imported-content/plugins
 
