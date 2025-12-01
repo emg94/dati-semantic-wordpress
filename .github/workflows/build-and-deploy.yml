@@ -25,30 +25,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: false   # Disabilita Git LFS
 
-      - name: Install MySQL client
-        run: sudo apt-get update && sudo apt-get install -y mysql-client
+      - name: Checkout content branch
+        uses: actions/checkout@v4
+        with:
+          repository: istat/wp-schema-deploy
+          ref: content
+          path: wp-schema-deploy-content
+          token: ${{ secrets.WP_SCHEMA_DEPLOY_TOKEN }}
+          lfs: true
 
-      - name: Retrieve files from DB
-        env:
-          DB_HOST: "db-testedev-mysql.mysql.database.azure.com"
-          DB_USER: "sv_ndc_bckwp_ddl"
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD_WP }}
-          DB_NAME: sv_ndc_bckwp
+      - name: Copy .wpress and plugins
         run: |
+          mkdir -p imported-content
+          # Copia il .wpress
+          cp wp-schema-deploy-content/*.wpress imported-content/ \
+            || { echo "Nessun .wpress trovato!"; exit 1; }
+
+          # Copia il plugin Unlimited Extension
           mkdir -p imported-content/plugins
-
-          # Estrai backup.wpress
-          mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME -e \
-            "SELECT FILE FROM sv_ndc_bckwp.test WHERE FILE_NAME='backup.wpress' INTO DUMPFILE 'imported-content/backup.wpress';"
-
-          # Estrai plugin ZIP
-          mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME -e \
-            "SELECT FILE FROM sv_ndc_bckwp.test WHERE FILE_NAME='all-in-one-wp-migration-unlimited-extension.zip' INTO DUMPFILE 'imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip';"
+          cp wp-schema-deploy-content/all-in-one-wp-migration-unlimited-extension.zip imported-content/plugins/ \
+            || { echo "Plugin Unlimited Extension non trovato!"; exit 1; }
 
           ls -lh imported-content
           ls -lh imported-content/plugins
+
 
       - name: Login GHCR
         uses: docker/login-action@v3
