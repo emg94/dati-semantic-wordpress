@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -euo pipefail
 
 WP_PATH="/var/www/html"
@@ -79,11 +80,29 @@ bootstrap_wp() {
             echo "[bootstrap]    The plugin must be installed in: $WP_PATH/wp-content/mu-plugins/oxygen-regenerate.php"
             echo "[bootstrap]    Skipping Oxygen regeneration."
         else
+            # Extract domain from SITE_URL for Oxygen CSS URL generation
+            # This ensures CSS URLs are correct even in WP-CLI context
+            DOMAIN=$(echo "$SITE_URL" | sed -E 's|^https?://||' | sed 's|/.*||')
+            if [ -n "$DOMAIN" ]; then
+                echo "[bootstrap] Configuring Oxygen domain: $DOMAIN"
+                wp option update oxygen_regenerate_site_domain "$DOMAIN" --allow-root --url="$SITE_URL" 2>/dev/null || true
+            fi
+            
+            # The wp oxygen regenerate command automatically manages cache state:
+            # - Enables cache temporarily if disabled (required for CSS generation)
+            # - Keeps cache enabled after generating CSS files (required for CSS to load)
+            # - Only restores original state if no CSS files were generated
+            echo "[bootstrap] Running Oxygen regeneration (cache state managed automatically)..."
+            
             if wp oxygen regenerate --force-css --allow-root --url="$SITE_URL" 2>&1; then
                 echo "[bootstrap] Oxygen regeneration completed successfully."
             else
                 echo "[bootstrap] Oxygen regeneration completed with warnings (check output above)."
             fi
+            
+            # Verify final cache state
+            FINAL_CACHE_STATE=$(wp option get oxygen_vsb_universal_css_cache --allow-root --url="$SITE_URL" 2>/dev/null || echo "false")
+            echo "[bootstrap] Final universal CSS cache state: $FINAL_CACHE_STATE"
         fi
         
         touch "$MARKER"
