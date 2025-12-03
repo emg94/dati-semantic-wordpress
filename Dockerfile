@@ -15,13 +15,9 @@ RUN apt-get update && \
 COPY ./imported-content/*.wpress /tmp/content.wpress
 COPY ./imported-content/plugins/all-in-one-wp-migration-unlimited-extension.zip /tmp/plugins/
 
-# Copia lo script entrypoint-clean
-COPY scripts/entrypoint-clean.sh /usr/local/bin/entrypoint-clean.sh
-RUN chmod +x /usr/local/bin/entrypoint-clean.sh
-
 # Copia lo script bootstrap
 COPY scripts/wp-bootstrap.sh /usr/local/bin/wp-bootstrap.sh
 RUN chmod +x /usr/local/bin/wp-bootstrap.sh
 
-ENTRYPOINT ["entrypoint-clean.sh"]
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
