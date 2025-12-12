@@ -1,47 +1,143 @@
 #!/bin/bash
-
+#
+# wp-bootstrap.sh - bootstrap WordPress in container
+# - Attende il DB
+# - Garantisce che wp-config.php esista (creazione se possibile)
+# - Applica WORDPRESS_CONFIG_EXTRA
+# - Esegue reset/install/import/plugin/oxygen come prima
+#
 set -euo pipefail
 
 WP_PATH="/var/www/html"
+WP_CONFIG="$WP_PATH/wp-config.php"
 CONTENT_FILE="/tmp/content.wpress"
-MARKER="$WP_PATH/.wpress_imported"
+MARKER_IMPORTED="$WP_PATH/.wpress_imported"
 PLUGIN_DIR="/tmp/plugins"
 PLUGIN_ZIP="$PLUGIN_DIR/all-in-one-wp-migration-unlimited-extension.zip"
 
-DB_HOST="${WORDPRESS_DB_HOST}"
-DB_USER="${WORDPRESS_DB_USER}"
-DB_PASSWORD="${WORDPRESS_DB_PASSWORD}"
-DB_NAME="${WORDPRESS_DB_NAME}"
-SITE_URL="${WORDPRESS_SITE_URL}"
+# ENV
+SITE_URL="${WORDPRESS_SITE_URL:-}"
+DB_NAME="${WORDPRESS_DB_NAME:-}"
+DB_USER="${WORDPRESS_DB_USER:-}"
+DB_PASSWORD="${WORDPRESS_DB_PASSWORD:-}"
+DB_HOST="${WORDPRESS_DB_HOST:-}"
+DB_PREFIX="${WORDPRESS_TABLE_PREFIX:-wp_}"
+WP_CONFIG_EXTRA="${WORDPRESS_CONFIG_EXTRA:-}"
 
-echo "[bootstrap] Launching async WordPress bootstrap..."
+# Marker per il blocco extra in wp-config.php
+MARK_START="/* BEGIN WORDPRESS_CONFIG_EXTRA */"
+MARK_END="/* END WORDPRESS_CONFIG_EXTRA */"
+
+log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] [bootstrap] $*"; }
+
+# Rimuove eventuale blocco precedente e appende il blocco extra in modo idempotente
+apply_wp_config_extra() {
+    if [ -z "${WP_CONFIG_EXTRA:-}" ]; then
+        log "No WORDPRESS_CONFIG_EXTRA set, skipping."
+        return 0
+    fi
+
+    if [ ! -f "$WP_CONFIG" ]; then
+        log "wp-config.php non trovato; non posso applicare WORDPRESS_CONFIG_EXTRA ora."
+        return 1
+    fi
+
+    log "Applying WORDPRESS_CONFIG_EXTRA in an idempotent way..."
+
+    # Rimuovi blocco precedente se esiste
+    awk -v s="$MARK_START" -v e="$MARK_END" '
+    BEGIN{inblock=0}
+    {
+      if (index($0,s)) { inblock=1; next }
+      if (index($0,e)) { inblock=0; next }
+      if (!inblock) print
+    }' "$WP_CONFIG" > "${WP_CONFIG}.tmp" && mv "${WP_CONFIG}.tmp" "$WP_CONFIG"
+
+    # Appende il nuovo blocco alla fine del file
+    {
+        printf "\n%s\n" "$MARK_START"
+        printf "%s\n" "$WP_CONFIG_EXTRA"
+        printf "%s\n" "$MARK_END"
+    } >> "$WP_CONFIG"
+
+    log "WORDPRESS_CONFIG_EXTRA applied."
+    return 0
+}
+
+# Se wp-config.php non esiste, prova a crearlo usando le ENV standard
+ensure_wp_config() {
+    if [ -f "$WP_CONFIG" ]; then
+        log "wp-config.php esiste già."
+        return 0
+    fi
+
+    # Se non abbiamo almeno DB_NAME e DB_USER, non possiamo creare il config
+    if [ -z "${DB_NAME}" ] || [ -z "${DB_USER}" ]; then
+        log "Impossibile creare wp-config.php: manca WORDPRESS_DB_NAME o WORDPRESS_DB_USER."
+        return 1
+    fi
+
+    log "wp-config.php non trovato: provo a crearne uno con wp-cli..."
+    # Esegui wp config create
+    wp config create \
+        --dbname="$DB_NAME" \
+        --dbuser="$DB_USER" \
+        --dbpass="$DB_PASSWORD" \
+        --dbhost="$DB_HOST" \
+        --dbprefix="$DB_PREFIX" \
+        --allow-root --path="$WP_PATH"
+
+    if [ -f "$WP_CONFIG" ]; then
+        log "wp-config.php creato correttamente."
+        return 0
+    else
+        log "Creazione wp-config.php FALLITA."
+        return 1
+    fi
+}
 
 bootstrap_wp() {
-    echo "[bootstrap] Waiting for WordPress DB connection (max 60s)..."
-    
+    log "Bootstrap async started."
+
+    # Attendi il DB (max 60s)
+    log "Waiting for WordPress DB connection (max 60s)..."
     TIMEOUT=60
     END=$((SECONDS + TIMEOUT))
     DB_OK=false
     set +e
-    
     while [ $SECONDS -lt $END ]; do
-        if wp db query 'SELECT 1' --allow-root --url="$SITE_URL" >/dev/null 2>&1; then
+        # Se wp-config.php non esiste, wp db query fallirà: tenta comunque di creare wp-config.php se possibile
+        if [ ! -f "$WP_CONFIG" ]; then
+            ensure_wp_config || true
+        fi
+
+        if wp db query 'SELECT 1' --allow-root --path="$WP_PATH" --url="$SITE_URL" >/dev/null 2>&1; then
             DB_OK=true
             break
         fi
-        echo "[bootstrap] DB not ready, retrying..."
+
+        log "DB not ready, retrying..."
         sleep 3
     done
     set -e
-    
+
     if [ "$DB_OK" = false ]; then
-        echo "[bootstrap] DB not reachable — skipping."
-        return
+        log "DB not reachable — skipping bootstrap."
+        return 0
     fi
-    
-    echo "[bootstrap] DB OK — resetting WordPress..."
-    wp db reset --yes --allow-root --url="$SITE_URL"
-    
+
+    # Se wp-config.php esiste ora, applica sempre le extra (idempotente)
+    if [ -f "$WP_CONFIG" ]; then
+        apply_wp_config_extra || log "Attenzione: non è stato possibile applicare WORDPRESS_CONFIG_EXTRA in questa fase."
+    else
+        log "wp-config.php ancora mancante dopo la connessione DB. Procedo comunque."
+    fi
+
+    # Reset DB e installare WordPress
+    log "DB OK — resetting WordPress..."
+    wp db reset --yes --allow-root --path="$WP_PATH" --url="$SITE_URL"
+
+    log "Running wp core install..."
     wp core install \
         --url="$SITE_URL" \
         --title="Dev WP" \
@@ -49,73 +145,73 @@ bootstrap_wp() {
         --admin_password="admin" \
         --admin_email="admin@example.com" \
         --skip-email \
-        --allow-root
-    
-    echo "[bootstrap] Installing AI1WM Unlimited..."
-    wp plugin install "$PLUGIN_ZIP" --activate --allow-root
-    
-    echo "[bootstrap] Updating AI1WM Unlimited plugin..."
-    wp plugin update all-in-one-wp-migration-unlimited-extension --allow-root || echo "[bootstrap] Plugin update failed or no update available"
-    
-    echo "[bootstrap] Waiting 10s before running import..."
+        --allow-root \
+        --path="$WP_PATH"
+
+    # Se per qualche motivo sono state aggiunte le extra dopo l'install, riproviamo ad applicarle
+    if [ -f "$WP_CONFIG" ]; then
+        apply_wp_config_extra || true
+    fi
+
+    # Installa plugin incluso nello image
+    if [ -f "$PLUGIN_ZIP" ]; then
+        log "Installing AI1WM Unlimited plugin..."
+        wp plugin install "$PLUGIN_ZIP" --activate --allow-root --path="$WP_PATH"
+        log "Updating AI1WM Unlimited plugin (if available)..."
+        wp plugin update all-in-one-wp-migration-unlimited-extension --allow-root --path="$WP_PATH" || log "Plugin update failed or not available"
+    else
+        log "Plugin zip non presente ($PLUGIN_ZIP) — skipping plugin install."
+    fi
+
+    log "Waiting 10s before running import..."
     sleep 10
-    
+
     if [ -f "$CONTENT_FILE" ]; then
-        echo "[bootstrap] Copying .wpress into ai1wm-backups..."
+        log "Copying .wpress into ai1wm-backups..."
         mkdir -p "$WP_PATH/wp-content/ai1wm-backups"
         cp "$CONTENT_FILE" "$WP_PATH/wp-content/ai1wm-backups/"
-        
-        echo "[bootstrap] Importing .wpress..."
-        wp ai1wm restore "$(basename "$CONTENT_FILE")" --yes --allow-root
-        
-        echo "[bootstrap] Regenerating permalinks..."
-        wp rewrite flush --hard --allow-root
-        
-        # Regenerate Oxygen Builder shortcodes and CSS cache
-        echo "[bootstrap] Regenerating Oxygen Builder shortcodes and CSS cache..."
-        
-        # Check if oxygen-regenerate.php mu-plugin exists
+
+        log "Importing .wpress..."
+        wp ai1wm restore "$(basename "$CONTENT_FILE")" --yes --allow-root --path="$WP_PATH"
+
+        log "Regenerating permalinks..."
+        wp rewrite flush --hard --allow-root --path="$WP_PATH"
+
+        # Oxygen Builder regeneration
         if [ ! -f "$WP_PATH/wp-content/mu-plugins/oxygen-regenerate.php" ]; then
-            echo "[bootstrap] WARNING: oxygen-regenerate.php mu-plugin not found!"
-            echo "[bootstrap]    The plugin must be installed in: $WP_PATH/wp-content/mu-plugins/oxygen-regenerate.php"
-            echo "[bootstrap]    Skipping Oxygen regeneration."
+            log "WARNING: oxygen-regenerate.php mu-plugin not found! Skipping Oxygen regeneration."
         else
-            # Extract domain from SITE_URL for Oxygen CSS URL generation
-            # This ensures CSS URLs are correct even in WP-CLI context
             DOMAIN=$(echo "$SITE_URL" | sed -E 's|^https?://||' | sed 's|/.*||')
             if [ -n "$DOMAIN" ]; then
-                echo "[bootstrap] Configuring Oxygen domain: $DOMAIN"
-                wp option update oxygen_regenerate_site_domain "$DOMAIN" --allow-root --url="$SITE_URL" 2>/dev/null || true
+                log "Configuring Oxygen domain: $DOMAIN"
+                wp option update oxygen_regenerate_site_domain "$DOMAIN" --allow-root --url="$SITE_URL" --path="$WP_PATH" 2>/dev/null || true
             fi
-            
-            # The wp oxygen regenerate command automatically manages cache state:
-            # - Enables cache temporarily if disabled (required for CSS generation)
-            # - Keeps cache enabled after generating CSS files (required for CSS to load)
-            # - Only restores original state if no CSS files were generated
-            echo "[bootstrap] Running Oxygen regeneration (cache state managed automatically)..."
-            
-            if wp oxygen regenerate --force-css --allow-root --url="$SITE_URL" 2>&1; then
-                echo "[bootstrap] Oxygen regeneration completed successfully."
+            log "Running Oxygen regeneration..."
+            if wp oxygen regenerate --force-css --allow-root --url="$SITE_URL" --path="$WP_PATH" 2>&1; then
+                log "Oxygen regeneration completed successfully."
             else
-                echo "[bootstrap] Oxygen regeneration completed with warnings (check output above)."
+                log "Oxygen regeneration completed with warnings (check output above)."
             fi
-            
-            # Verify final cache state
-            FINAL_CACHE_STATE=$(wp option get oxygen_vsb_universal_css_cache --allow-root --url="$SITE_URL" 2>/dev/null || echo "false")
-            echo "[bootstrap] Final universal CSS cache state: $FINAL_CACHE_STATE"
         fi
-        
-        touch "$MARKER"
-        echo "[bootstrap] Import completed."
+
+        touch "$MARKER_IMPORTED"
+        log "Import completed."
     else
-        echo "[bootstrap] No .wpress found, skipping restore."
+        log "No .wpress found, skipping restore."
     fi
-    
-    echo "[bootstrap] Bootstrap finished."
+
+    # Assicura ownership corretta
+    if command -v chown >/dev/null 2>&1; then
+        log "Setting ownership $WP_PATH -> www-data:www-data (if applicabile)..."
+        chown -R www-data:www-data "$WP_PATH" || true
+    fi
+
+    log "Bootstrap finished."
 }
 
+# Lancia in background
 bootstrap_wp &
 
-echo "[bootstrap] Async bootstrap launched."
+log "Async bootstrap launched."
 
 exit 0
