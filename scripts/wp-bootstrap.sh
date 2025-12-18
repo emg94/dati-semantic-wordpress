@@ -24,6 +24,16 @@ DB_HOST="${WORDPRESS_DB_HOST:-}"
 DB_PREFIX="${WORDPRESS_TABLE_PREFIX:-wp_}"
 WP_CONFIG_EXTRA="${WORDPRESS_CONFIG_EXTRA:-}"
 
+# === PROD: abilita SSL MySQL solo per l'ambiente PROD ===
+if [ "$DB_USER" = "pd_ndc_wp_ddl" ]; then
+    log "PROD environment detected — enabling MySQL SSL"
+
+    WP_CONFIG_EXTRA="${WP_CONFIG_EXTRA}
+define( 'MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL );
+define( 'MYSQL_SSL_CA', '/var/www/html/azure-mysql-ca-cert.pem' );
+"
+fi
+
 # Marker per il blocco extra in wp-config.php
 MARK_START="/* BEGIN WORDPRESS_CONFIG_EXTRA */"
 MARK_END="/* END WORDPRESS_CONFIG_EXTRA */"
