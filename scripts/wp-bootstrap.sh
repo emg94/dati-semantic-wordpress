@@ -30,7 +30,7 @@ if [ "$DB_USER" = "pd_ndc_wp_ddl" ]; then
 
     WP_CONFIG_EXTRA="${WP_CONFIG_EXTRA}
 define( 'MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL );
-define( 'MYSQL_SSL_CA', '/var/www/html/azure-mysql-ca-cert.pem' );
+define( 'MYSQL_SSL_CA', '/etc/ssl/mysql/azure-mysql-ca-cert.pem' );
 "
 fi
 
