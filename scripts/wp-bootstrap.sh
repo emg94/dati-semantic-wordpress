@@ -36,6 +36,7 @@ log "DEBUG: DB_USER='${DB_USER:-}'"
 # === PROD: abilita SSL MySQL solo per l'ambiente PROD ===
 ENABLE_DB_SSL=false
 MYSQL_SSL_CA="/etc/ssl/mysql/azure-mysql-ca-cert.pem"
+MYSQL_SSL_DEFS=""
 
 # DB_SSL_DEFINES will contain PHP define() lines to be injected early in wp-config.php
 DB_SSL_DEFINES=""
@@ -126,6 +127,24 @@ apply_db_ssl_defines_early() {
 ensure_wp_config() {
     if [ -f "$WP_CONFIG" ]; then
         log "wp-config.php esiste già."
+        # Se SSL è necessario ma non ancora configurato, aggiungilo ora
+        if [ "$ENABLE_DB_SSL" = true ] && [ -n "$MYSQL_SSL_DEFS" ] && ! grep -q "MYSQL_CLIENT_FLAGS" "$WP_CONFIG" 2>/dev/null; then
+            log "Adding SSL definitions to existing wp-config.php..."
+            # Inserisci le definizioni SSL prima delle definizioni DB
+            # Trova la riga con DB_NAME e inserisci prima
+            awk -v ssl_defs="$MYSQL_SSL_DEFS" '
+                /define.*DB_NAME/ && !ssl_inserted {
+                    print ssl_defs
+                    ssl_inserted=1
+                }
+                { print }
+            ' "$WP_CONFIG" > "${WP_CONFIG}.tmp" && mv "${WP_CONFIG}.tmp" "$WP_CONFIG" || {
+                log "Failed to insert SSL definitions, trying alternative method..."
+                # Metodo alternativo: inserisci dopo <?php
+                sed -i "1a\\$MYSQL_SSL_DEFS" "$WP_CONFIG"
+            }
+            log "SSL definitions added to existing wp-config.php."
+        fi
         return 0
     fi
 
