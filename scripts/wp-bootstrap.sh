@@ -24,21 +24,34 @@ DB_HOST="${WORDPRESS_DB_HOST:-}"
 DB_PREFIX="${WORDPRESS_TABLE_PREFIX:-wp_}"
 WP_CONFIG_EXTRA="${WORDPRESS_CONFIG_EXTRA:-}"
 
-log "DEBUG: DB_USER='${DB_USER:-}'"
-
-# === PROD: abilita SSL MySQL solo per l'ambiente PROD ===
-if [ "${DB_USER:-}" = "pd_ndc_wp_ddl" ]; then
-    log "PROD environment detected — enabling MySQL SSL"
-
-    WP_CONFIG_EXTRA="${WP_CONFIG_EXTRA}"$'\n'"define( 'MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL );"$'\n'"define( 'MYSQL_SSL_CA', '/etc/ssl/mysql/azure-mysql-ca-cert.pem' );"
-fi
-
-
 # Marker per il blocco extra in wp-config.php
 MARK_START="/* BEGIN WORDPRESS_CONFIG_EXTRA */"
 MARK_END="/* END WORDPRESS_CONFIG_EXTRA */"
 
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] [bootstrap] $*"; }
+
+log "DEBUG: DB_USER='${DB_USER:-}'"
+
+# === PROD: abilita SSL MySQL solo per l'ambiente PROD ===
+# Verifica se siamo in produzione (controlla DB_USER o variabile d'ambiente esplicita)
+ENABLE_DB_SSL=false
+MYSQL_SSL_CA="/etc/ssl/mysql/azure-mysql-ca-cert.pem"
+
+if [ "${DB_USER:-}" = "pd_ndc_wp_ddl" ]; then
+    log "PROD environment detected — checking MySQL SSL certificate..."
+    
+    # Verifica che il certificato SSL esista prima di abilitare SSL
+    if [ -f "$MYSQL_SSL_CA" ]; then
+        log "MySQL SSL certificate found at $MYSQL_SSL_CA — enabling MySQL SSL"
+        ENABLE_DB_SSL=true
+        WP_CONFIG_EXTRA="${WP_CONFIG_EXTRA}"$'\n'"define( 'MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL );"$'\n'"define( 'MYSQL_SSL_CA', '$MYSQL_SSL_CA' );"
+    else
+        log "WARNING: PROD environment detected but SSL certificate not found at $MYSQL_SSL_CA — SSL will NOT be enabled"
+        log "This may cause connection issues in production!"
+    fi
+else
+    log "DEV/TEST environment detected — MySQL SSL will NOT be enabled"
+fi
 
 # Rimuove eventuale blocco precedente e appende il blocco extra in modo idempotente
 apply_wp_config_extra() {
@@ -121,7 +134,7 @@ bootstrap_wp() {
             ensure_wp_config || true
         fi
 
-        if wp db query 'SELECT 1' --allow-root --path="$WP_PATH" --url="$SITE_URL" >/dev/null 2>&1; then
+        if wp db query 'SELECT 1' --allow-root --path="$WP_PATH" >/dev/null 2>&1; then
             DB_OK=true
             break
         fi
@@ -145,7 +158,7 @@ bootstrap_wp() {
 
     # Reset DB e installare WordPress
     log "DB OK — resetting WordPress..."
-    wp db reset --yes --allow-root --path="$WP_PATH" --url="$SITE_URL"
+    wp db reset --yes --allow-root --path="$WP_PATH"
 
     log "Running wp core install..."
     wp core install \
@@ -194,10 +207,19 @@ bootstrap_wp() {
             DOMAIN=$(echo "$SITE_URL" | sed -E 's|^https?://||' | sed 's|/.*||')
             if [ -n "$DOMAIN" ]; then
                 log "Configuring Oxygen domain: $DOMAIN"
-                wp option update oxygen_regenerate_site_domain "$DOMAIN" --allow-root --url="$SITE_URL" --path="$WP_PATH" 2>/dev/null || true
+                if [ -n "$SITE_URL" ]; then
+                    wp option update oxygen_regenerate_site_domain "$DOMAIN" --allow-root --url="$SITE_URL" --path="$WP_PATH" 2>/dev/null || true
+                else
+                    wp option update oxygen_regenerate_site_domain "$DOMAIN" --allow-root --path="$WP_PATH" 2>/dev/null || true
+                fi
             fi
             log "Running Oxygen regeneration..."
-            if wp oxygen regenerate --force-css --allow-root --url="$SITE_URL" --path="$WP_PATH" 2>&1; then
+            if [ -n "$SITE_URL" ]; then
+                WP_REGENERATE_CMD="wp oxygen regenerate --force-css --allow-root --url=\"$SITE_URL\" --path=\"$WP_PATH\""
+            else
+                WP_REGENERATE_CMD="wp oxygen regenerate --force-css --allow-root --path=\"$WP_PATH\""
+            fi
+            if eval "$WP_REGENERATE_CMD" 2>&1; then
                 log "Oxygen regeneration completed successfully."
             else
                 log "Oxygen regeneration completed with warnings (check output above)."
