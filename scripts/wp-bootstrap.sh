@@ -38,6 +38,7 @@ log "DEBUG: DB_USER='${DB_USER:-}'"
 log "DEBUG: BOOTSTRAP_TRIGGER='${BOOTSTRAP_TRIGGER:-}'"
 
 # === PROD: abilita SSL MySQL solo per l'ambiente PROD ===
+# Nota: se presente il CA, costruiamo un blocco PHP da inserire presto in wp-config.php
 MYSQL_SSL_CA="/etc/ssl/mysql/azure-mysql-ca-cert.pem"
 
 # DB_SSL_DEFINES will contain PHP define() lines to be injected early in wp-config.php
@@ -66,7 +67,7 @@ has_db_ssl_defines() {
     [ -n "$DB_SSL_DEFINES" ]
 }
 
-# Rimuove eventuale blocco precedente e appende il blocco extra in modo idempotente
+# Applica `WORDPRESS_CONFIG_EXTRA` in modo idempotente (rimuove il blocco precedente e lo ricrea)
 apply_wp_config_extra() {
     if [ -z "${WP_CONFIG_EXTRA:-}" ]; then
         log "No WORDPRESS_CONFIG_EXTRA set, skipping."
@@ -100,7 +101,7 @@ apply_wp_config_extra() {
     return 0
 }
 
-# Inserisce le define SSL DB all'inizio (prima del "That's all, stop editing") in modo idempotente
+# Inserisce le define SSL DB *early* in wp-config.php (prima del "stop editing")
 apply_db_ssl_defines_early() {
     has_db_ssl_defines || return 0
     [ -f "$WP_CONFIG" ] || return 1
@@ -125,6 +126,7 @@ apply_db_ssl_defines_early() {
     return 0
 }
 
+# Wrapper che garantisce la presenza delle DB SSL defines (no-op se non richieste)
 ensure_db_ssl_defines() {
     has_db_ssl_defines || return 0
     [ -f "$WP_CONFIG" ] || return 1
@@ -136,6 +138,10 @@ ensure_db_ssl_defines() {
     apply_db_ssl_defines_early
 }
 
+# Trigger/state gate:
+# - legge $BOOTSTRAP_TRIGGER (da annotation -> env)
+# - confronta con $STATE_TRIGGER_FILE nel PVC
+# - ritorna 0 (run) solo se trigger cambiato o stato mancante
 should_run_bootstrap() {
     mkdir -p "$STATE_DIR"
 
@@ -160,11 +166,12 @@ should_run_bootstrap() {
 }
 
 mark_bootstrap_success() {
+    # Scrive il trigger corrente su disco per evitare re-import su restart
     mkdir -p "$STATE_DIR"
     printf '%s\n' "$BOOTSTRAP_TRIGGER" > "$STATE_TRIGGER_FILE"
 }
 
-# Se wp-config.php non esiste, prova a crearlo usando le ENV standard
+# Ensure/crea wp-config.php usando wp-cli se possibile
 ensure_wp_config() {
     if [ -f "$WP_CONFIG" ]; then
         log "wp-config.php esiste già."
@@ -207,6 +214,7 @@ ensure_wp_config() {
 }
 
 bootstrap_wp() {
+    # Flusso principale (asincrono): gate -> attesa DB -> reset/install/import
     log "Bootstrap async started."
 
     if ! should_run_bootstrap; then
