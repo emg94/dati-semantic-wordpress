@@ -1,11 +1,37 @@
 #!/bin/bash
+# wp-bootstrap.sh - bootstrap WordPress in container (async, postStart)
 #
-# wp-bootstrap.sh - bootstrap WordPress in container
-# - Attende il DB
-# - Garantisce che wp-config.php esista (creazione se possibile)
-# - Applica DB SSL defines EARLY se siamo in PROD e il CA esiste
-# - Garantisce che wp-config.php contenga WORDPRESS_CONFIG_EXTRA (idempotente)
-# - Esegue reset/install/import/plugin/oxygen come prima
+# Scopo e comportamento principale:
+# - Viene eseguito in background dal lifecycle.postStart del container.
+# - Attende che il DB sia raggiungibile e garantisce che `wp-config.php`
+#   esista (se possibile lo crea con `wp config create`).
+# - In ambienti di produzione può iniettare early MySQL SSL defines se
+#   il certificato CA è presente nel container.
+# - Applica in modo idempotente il blocco `WORDPRESS_CONFIG_EXTRA` se
+#   fornito tramite la variabile d'ambiente corrispondente.
+# - Esegue un'operazione distruttiva (reset DB + import .wpress) SOLO quando
+#   viene rilevato un trigger di bootstrap diverso dall'ultimo processato.
+#
+# Trigger e persistenza dello stato (esempio e note operative):
+# - La Deployment aggiunge l'annotation `wordpress-bootstrap-trigger` sul pod template.
+#   Esempio: `wordpress-bootstrap-trigger: "bootstrap-20251212-95-773e4e1"`.
+# - Questa annotation viene mappata in container sulla variabile d'ambiente
+#   `WORDPRESS_BOOTSTRAP_TRIGGER` tramite `valueFrom.fieldRef` (vedi manifest).
+# - Lo script confronta `WORDPRESS_BOOTSTRAP_TRIGGER` con il contenuto di
+#   `/var/lib/wp-bootstrap/last-bootstrap-trigger` (persistente, montato da PVC
+#   con `subPath=wp-bootstrap-state`).
+# - `updateImage.sh` imposta automaticamente l'annotation a `bootstrap-<imageTag>`
+#   quando aggiorna l'immagine: in questo modo il trigger è legato alla versione
+#   dell'immagine appena deployata.
+# - Dopo un bootstrap completato con successo lo script chiama
+#   `mark_bootstrap_success()` che sovrascrive il file di stato con il trigger
+#   corrente. Successivi riavvii del pod salteranno la restore finché il trigger
+#   non cambia.
+#
+# Nota importante: l'initContainer pulisce `/var/www/html` ad ogni start, ma
+# il percorso di stato `/var/lib/wp-bootstrap` è su PVC/subPath e NON viene
+# rimosso dall'initContainer; questo permette di mantenere memoria del
+# bootstrap precedente.
 #
 set -euo pipefail
 
@@ -138,10 +164,19 @@ ensure_db_ssl_defines() {
     apply_db_ssl_defines_early
 }
 
-# Trigger/state gate:
-# - legge $BOOTSTRAP_TRIGGER (da annotation -> env)
-# - confronta con $STATE_TRIGGER_FILE nel PVC
-# - ritorna 0 (run) solo se trigger cambiato o stato mancante
+# Trigger/state gate per decidere se eseguire il bootstrap distruttivo (import) o saltarlo.
+# Il deploy pipeline (es. `updateImage.sh`) imposta l'annotation
+# `wordpress-bootstrap-trigger` a un valore del tipo `bootstrap-<imageTag>`.
+# Questo valore viene passato al container tramite `WORDPRESS_BOOTSTRAP_TRIGGER`.
+#
+# La funzione confronta il trigger corrente con il valore memorizzato in
+# `$STATE_TRIGGER_FILE` (montato su PVC con subPath). Comportamento:
+# - Se non esiste file di stato => ritorna 0 (eseguire bootstrap)
+# - Se il trigger corrente è diverso dall'ultimo salvato => ritorna 0
+# - Se il trigger è uguale all'ultimo salvato => ritorna 1 (skip)
+#
+# Nota operativa: il file di stato è montato in `/var/lib/wp-bootstrap` via PVC
+# e non viene sovrascritto dall'initContainer che pulisce `/var/www/html`.
 should_run_bootstrap() {
     mkdir -p "$STATE_DIR"
 
