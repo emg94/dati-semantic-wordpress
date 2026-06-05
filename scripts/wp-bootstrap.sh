@@ -1,11 +1,37 @@
 #!/bin/bash
+# wp-bootstrap.sh - bootstrap WordPress in container (async, postStart)
 #
-# wp-bootstrap.sh - bootstrap WordPress in container
-# - Attende il DB
-# - Garantisce che wp-config.php esista (creazione se possibile)
-# - Applica DB SSL defines EARLY se siamo in PROD e il CA esiste
-# - Garantisce che wp-config.php contenga WORDPRESS_CONFIG_EXTRA (idempotente)
-# - Esegue reset/install/import/plugin/oxygen come prima
+# Scopo e comportamento principale:
+# - Viene eseguito in background dal lifecycle.postStart del container.
+# - Attende che il DB sia raggiungibile e garantisce che `wp-config.php`
+#   esista (se possibile lo crea con `wp config create`).
+# - In ambienti di produzione può iniettare early MySQL SSL defines se
+#   il certificato CA è presente nel container.
+# - Applica in modo idempotente il blocco `WORDPRESS_CONFIG_EXTRA` se
+#   fornito tramite la variabile d'ambiente corrispondente.
+# - Esegue un'operazione distruttiva (reset DB + import .wpress) SOLO quando
+#   viene rilevato un trigger di bootstrap diverso dall'ultimo processato.
+#
+# Trigger e persistenza dello stato (esempio e note operative):
+# - La Deployment aggiunge l'annotation `wordpress-bootstrap-trigger` sul pod template.
+#   Esempio: `wordpress-bootstrap-trigger: "bootstrap-20251212-95-773e4e1"`.
+# - Questa annotation viene mappata in container sulla variabile d'ambiente
+#   `WORDPRESS_BOOTSTRAP_TRIGGER` tramite `valueFrom.fieldRef` (vedi manifest).
+# - Lo script confronta `WORDPRESS_BOOTSTRAP_TRIGGER` con il contenuto di
+#   `/var/lib/wp-bootstrap/last-bootstrap-trigger` (persistente, montato da PVC
+#   con `subPath=wp-bootstrap-state`).
+# - `updateImage.sh` imposta automaticamente l'annotation a `bootstrap-<imageTag>`
+#   quando aggiorna l'immagine: in questo modo il trigger è legato alla versione
+#   dell'immagine appena deployata.
+# - Dopo un bootstrap completato con successo lo script chiama
+#   `mark_bootstrap_success()` che sovrascrive il file di stato con il trigger
+#   corrente. Successivi riavvii del pod salteranno la restore finché il trigger
+#   non cambia.
+#
+# Nota importante: l'initContainer pulisce `/var/www/html` ad ogni start, ma
+# il percorso di stato `/var/lib/wp-bootstrap` è su PVC/subPath e NON viene
+# rimosso dall'initContainer; questo permette di mantenere memoria del
+# bootstrap precedente.
 #
 set -euo pipefail
 
@@ -13,6 +39,8 @@ WP_PATH="/var/www/html"
 WP_CONFIG="$WP_PATH/wp-config.php"
 CONTENT_FILE="/tmp/content.wpress"
 MARKER_IMPORTED="$WP_PATH/.wpress_imported"
+STATE_DIR="/var/lib/wp-bootstrap"
+STATE_TRIGGER_FILE="$STATE_DIR/last-bootstrap-trigger"
 PLUGIN_DIR="/tmp/plugins"
 PLUGIN_ZIP="$PLUGIN_DIR/all-in-one-wp-migration-unlimited-extension.zip"
 
@@ -24,6 +52,7 @@ DB_PASSWORD="${WORDPRESS_DB_PASSWORD:-}"
 DB_HOST="${WORDPRESS_DB_HOST:-}"
 DB_PREFIX="${WORDPRESS_TABLE_PREFIX:-wp_}"
 WP_CONFIG_EXTRA="${WORDPRESS_CONFIG_EXTRA:-}"
+BOOTSTRAP_TRIGGER="${WORDPRESS_BOOTSTRAP_TRIGGER:-initial}"
 
 # Marker per il blocco extra in wp-config.php
 MARK_START="/* BEGIN WORDPRESS_CONFIG_EXTRA */"
@@ -32,11 +61,11 @@ MARK_END="/* END WORDPRESS_CONFIG_EXTRA */"
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] [bootstrap] $*"; }
 
 log "DEBUG: DB_USER='${DB_USER:-}'"
+log "DEBUG: BOOTSTRAP_TRIGGER='${BOOTSTRAP_TRIGGER:-}'"
 
 # === PROD: abilita SSL MySQL solo per l'ambiente PROD ===
-ENABLE_DB_SSL=false
+# Nota: se presente il CA, costruiamo un blocco PHP da inserire presto in wp-config.php
 MYSQL_SSL_CA="/etc/ssl/mysql/azure-mysql-ca-cert.pem"
-MYSQL_SSL_DEFS=""
 
 # DB_SSL_DEFINES will contain PHP define() lines to be injected early in wp-config.php
 DB_SSL_DEFINES=""
@@ -45,7 +74,6 @@ if [ "${DB_USER:-}" = "pd_ndc_wp_ddl" ]; then
     log "PROD environment detected — checking MySQL SSL certificate..."
     if [ -f "$MYSQL_SSL_CA" ]; then
         log "MySQL SSL certificate found at $MYSQL_SSL_CA — will enable MySQL SSL (in wp-config.php early)."
-        ENABLE_DB_SSL=true
         DB_SSL_DEFINES=$(cat <<PHP
 /* BEGIN MYSQL SSL DEFINES */
 define( 'MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL );
@@ -61,7 +89,11 @@ else
     log "DEV/TEST environment detected — MySQL SSL will NOT be enabled"
 fi
 
-# Rimuove eventuale blocco precedente e appende il blocco extra in modo idempotente
+has_db_ssl_defines() {
+    [ -n "$DB_SSL_DEFINES" ]
+}
+
+# Applica `WORDPRESS_CONFIG_EXTRA` in modo idempotente (rimuove il blocco precedente e lo ricrea)
 apply_wp_config_extra() {
     if [ -z "${WP_CONFIG_EXTRA:-}" ]; then
         log "No WORDPRESS_CONFIG_EXTRA set, skipping."
@@ -95,13 +127,11 @@ apply_wp_config_extra() {
     return 0
 }
 
-# Inserisce le define SSL DB all'inizio (prima del "That's all, stop editing") in modo idempotente
+# Inserisce le define SSL DB *early* in wp-config.php (prima del "stop editing")
 apply_db_ssl_defines_early() {
-    # Se non abbiamo defines da aggiungere, esci
-    [ -z "$DB_SSL_DEFINES" ] && return 0
-    [ ! -f "$WP_CONFIG" ] && return 1
+    has_db_ssl_defines || return 0
+    [ -f "$WP_CONFIG" ] || return 1
 
-    # Controlla se sono già presenti (idempotente)
     if grep -q "MYSQL_CLIENT_FLAGS" "$WP_CONFIG" >/dev/null 2>&1; then
         log "MySQL SSL defines already present in wp-config.php, skipping injection."
         return 0
@@ -109,7 +139,6 @@ apply_db_ssl_defines_early() {
 
     log "Injecting MySQL SSL defines early in wp-config.php"
 
-    # Inserisce il blocco prima della linea che contiene "stop editing" (idempotente)
     awk -v ssl="$DB_SSL_DEFINES" '
     BEGIN{done=0}
     /stop editing/ && !done {
@@ -123,26 +152,70 @@ apply_db_ssl_defines_early() {
     return 0
 }
 
-# Se wp-config.php non esiste, prova a crearlo usando le ENV standard
+# Wrapper che garantisce la presenza delle DB SSL defines (no-op se non richieste)
+ensure_db_ssl_defines() {
+    has_db_ssl_defines || return 0
+    [ -f "$WP_CONFIG" ] || return 1
+
+    if grep -q "MYSQL_CLIENT_FLAGS" "$WP_CONFIG" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    apply_db_ssl_defines_early
+}
+
+# Trigger/state gate per decidere se eseguire il bootstrap distruttivo (import) o saltarlo.
+# Il deploy pipeline (es. `updateImage.sh`) imposta l'annotation
+# `wordpress-bootstrap-trigger` a un valore del tipo `bootstrap-<imageTag>`.
+# Questo valore viene passato al container tramite `WORDPRESS_BOOTSTRAP_TRIGGER`.
+#
+# La funzione confronta il trigger corrente con il valore memorizzato in
+# `$STATE_TRIGGER_FILE` (montato su PVC con subPath). Comportamento:
+# - Se non esiste file di stato => ritorna 0 (eseguire bootstrap)
+# - Se il trigger corrente è diverso dall'ultimo salvato => ritorna 0
+# - Se il trigger è uguale all'ultimo salvato => ritorna 1 (skip)
+#
+# Nota operativa: il file di stato è montato in `/var/lib/wp-bootstrap` via PVC
+# e non viene sovrascritto dall'initContainer che pulisce `/var/www/html`.
+should_run_bootstrap() {
+    mkdir -p "$STATE_DIR"
+
+    if [ -z "${BOOTSTRAP_TRIGGER:-}" ]; then
+        log "No WORDPRESS_BOOTSTRAP_TRIGGER set, skipping destructive bootstrap."
+        return 1
+    fi
+
+    if [ ! -f "$STATE_TRIGGER_FILE" ]; then
+        log "No previous bootstrap state found; bootstrap will run."
+        return 0
+    fi
+
+    LAST_TRIGGER=$(cat "$STATE_TRIGGER_FILE" 2>/dev/null || true)
+    if [ "$LAST_TRIGGER" = "$BOOTSTRAP_TRIGGER" ]; then
+        log "Bootstrap already processed (trigger=$BOOTSTRAP_TRIGGER); skipping restore."
+        return 1
+    fi
+
+    log "Bootstrap trigger changed from '${LAST_TRIGGER:-<none>}' to '$BOOTSTRAP_TRIGGER'; bootstrap will run."
+    return 0
+}
+
+mark_bootstrap_success() {
+    # Scrive il trigger corrente su disco per evitare re-import su restart
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$BOOTSTRAP_TRIGGER" > "$STATE_TRIGGER_FILE"
+}
+
+# Ensure/crea wp-config.php usando wp-cli se possibile
 ensure_wp_config() {
     if [ -f "$WP_CONFIG" ]; then
         log "wp-config.php esiste già."
-        # Se SSL è necessario ma non ancora configurato, aggiungilo ora
-        if [ "$ENABLE_DB_SSL" = true ] && [ -n "$MYSQL_SSL_DEFS" ] && ! grep -q "MYSQL_CLIENT_FLAGS" "$WP_CONFIG" 2>/dev/null; then
+        if has_db_ssl_defines; then
             log "Adding SSL definitions to existing wp-config.php..."
-            # Inserisci le definizioni SSL prima delle definizioni DB
-            # Trova la riga con DB_NAME e inserisci prima
-            awk -v ssl_defs="$MYSQL_SSL_DEFS" '
-                /define.*DB_NAME/ && !ssl_inserted {
-                    print ssl_defs
-                    ssl_inserted=1
-                }
-                { print }
-            ' "$WP_CONFIG" > "${WP_CONFIG}.tmp" && mv "${WP_CONFIG}.tmp" "$WP_CONFIG" || {
+            if ! ensure_db_ssl_defines; then
                 log "Failed to insert SSL definitions, trying alternative method..."
-                # Metodo alternativo: inserisci dopo <?php
-                sed -i "1a\\$MYSQL_SSL_DEFS" "$WP_CONFIG"
-            }
+                sed -i "1a\\$DB_SSL_DEFINES" "$WP_CONFIG"
+            fi
             log "SSL definitions added to existing wp-config.php."
         fi
         return 0
@@ -167,8 +240,7 @@ ensure_wp_config() {
 
     if [ -f "$WP_CONFIG" ]; then
         log "wp-config.php creato correttamente. Applying early DB SSL defines if needed."
-        # Applica subito le define SSL (se necessario) prima di qualsiasi tentativo di connessione
-        apply_db_ssl_defines_early || log "Attenzione: non è stato possibile iniettare le DB SSL defines subito dopo la creazione del wp-config.php."
+        ensure_db_ssl_defines || log "Attenzione: non è stato possibile iniettare le DB SSL defines subito dopo la creazione del wp-config.php."
         return 0
     else
         log "Creazione wp-config.php FALLITA."
@@ -177,12 +249,15 @@ ensure_wp_config() {
 }
 
 bootstrap_wp() {
+    # Flusso principale (asincrono): gate -> attesa DB -> reset/install/import
     log "Bootstrap async started."
 
-    # Se wp-config.php esiste, prova ad applicare le defines SSL early prima di tentare la connessione DB
-    if [ -f "$WP_CONFIG" ]; then
-        apply_db_ssl_defines_early || log "Attenzione: non è stato possibile applicare le DB SSL defines all'inizio."
+    if ! should_run_bootstrap; then
+        log "Bootstrap skipped by trigger/state gate."
+        return 0
     fi
+
+    ensure_db_ssl_defines || log "Attenzione: non è stato possibile applicare le DB SSL defines all'inizio."
 
     # Attendi il DB (max 60s)
     log "Waiting for WordPress DB connection (max 60s)..."
@@ -195,8 +270,7 @@ bootstrap_wp() {
         if [ ! -f "$WP_CONFIG" ]; then
             ensure_wp_config || true
         else
-            # Assicura che le DB SSL defines siano presenti appena prima di provare la connessione
-            apply_db_ssl_defines_early || true
+            ensure_db_ssl_defines || true
         fi
 
         if wp db query 'SELECT 1' --allow-root --path="$WP_PATH" >/dev/null 2>&1; then
@@ -292,6 +366,7 @@ bootstrap_wp() {
         fi
 
         touch "$MARKER_IMPORTED"
+        mark_bootstrap_success
         log "Import completed."
     else
         log "No .wpress found, skipping restore."
